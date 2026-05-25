@@ -1,0 +1,173 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Tpu;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
+
+class TpuSpatialApiTest extends TestCase
+{
+    use DatabaseTransactions;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Paksa koneksi pgsql (PostGIS) untuk pengujian spasial ini setelah app container siap
+        config(['database.default' => 'pgsql']);
+        config(['database.connections.pgsql.database' => 'GoNgelayat']);
+    }
+
+    /**
+     * Test storing a TPU with valid polygon coordinates.
+     */
+    public function test_can_store_tpu_with_valid_polygon_geometry(): void
+    {
+        $payload = [
+            'nama' => 'TPU Sumbersari Indah',
+            'alamat' => 'Jl. Kalimantan No. 37, Jember',
+            'polygon' => [
+                ['lat' => -8.1681, 'lng' => 113.7151],
+                ['lat' => -8.1682, 'lng' => 113.7155],
+                ['lat' => -8.1685, 'lng' => 113.7157],
+            ]
+        ];
+
+        $response = $this->postJson(route('api.tpu.store'), $payload);
+
+        $response->assertStatus(201)
+            ->assertJsonStructure([
+                'status',
+                'message',
+                'data' => [
+                    'id',
+                    'nama',
+                    'alamat',
+                    'geom' => [
+                        'type',
+                        'coordinates'
+                    ],
+                    'created_at',
+                    'updated_at'
+                ]
+            ])
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.nama', 'TPU Sumbersari Indah');
+
+        // Pastikan record tersimpan di database PostGIS
+        $this->assertDatabaseHas('tpu', [
+            'nama' => 'TPU Sumbersari Indah',
+            'alamat' => 'Jl. Kalimantan No. 37, Jember',
+        ]);
+
+        $tpuId = $response->json('data.id');
+        $tpu = Tpu::findOrFail($tpuId);
+        $this->assertNotNull($tpu->geom);
+
+        // Ambil data spasial dari database secara langsung untuk memverifikasi SRID & tipe koordinat
+        $dbGeom = DB::selectOne("SELECT ST_AsText(geom) as wkt, ST_SRID(geom) as srid FROM tpu WHERE id = ?", [$tpu->id]);
+        $this->assertEquals(4326, $dbGeom->srid);
+        $this->assertStringContainsString('POLYGON', $dbGeom->wkt);
+        
+        // Memastikan polygon tertutup otomatis (titik terakhir = titik pertama)
+        // 113.7151 -8.1681 -> titik pertama & penutup
+        $this->assertStringContainsString('113.7151 -8.1681', $dbGeom->wkt);
+    }
+
+    /**
+     * Test storing a TPU validation fails when vertices < 3.
+     */
+    public function test_cannot_store_tpu_with_insufficient_polygon_vertices(): void
+    {
+        $payload = [
+            'nama' => 'TPU Invalid Vertices',
+            'polygon' => [
+                ['lat' => -8.1681, 'lng' => 113.7151],
+                ['lat' => -8.1682, 'lng' => 113.7155],
+            ]
+        ];
+
+        $response = $this->postJson(route('api.tpu.store'), $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['polygon']);
+    }
+
+    /**
+     * Test getting a TPU geometry as GeoJSON.
+     */
+    public function test_can_get_tpu_geometry_as_geojson(): void
+    {
+        // Insert dummy TPU dengan raw query PostGIS
+        $tpu = Tpu::create([
+            'nama' => 'TPU GeoJSON Test',
+            'alamat' => 'Jl. Test',
+        ]);
+        
+        $wkt = "POLYGON((113.7151 -8.1681, 113.7155 -8.1682, 113.7157 -8.1685, 113.7151 -8.1681))";
+        DB::statement("UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?", [$wkt, $tpu->id]);
+
+        $response = $this->getJson(route('api.tpu.show', $tpu->id));
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'status' => 'success',
+                'data' => [
+                    'id' => $tpu->id,
+                    'nama' => 'TPU GeoJSON Test',
+                    'geom' => [
+                        'type' => 'Polygon',
+                        'coordinates' => [
+                            [
+                                [113.7151, -8.1681],
+                                [113.7155, -8.1682],
+                                [113.7157, -8.1685],
+                                [113.7151, -8.1681]
+                            ]
+                        ]
+                    ]
+                ]
+            ]);
+    }
+
+    /**
+     * Test updating a TPU polygon.
+     */
+    public function test_can_update_tpu_geometry(): void
+    {
+        $tpu = Tpu::create([
+            'nama' => 'TPU Sebelum Update',
+            'alamat' => 'Jl. Lama',
+        ]);
+        
+        $wktOld = "POLYGON((113.7151 -8.1681, 113.7155 -8.1682, 113.7157 -8.1685, 113.7151 -8.1681))";
+        DB::statement("UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?", [$wktOld, $tpu->id]);
+
+        $payload = [
+            'nama' => 'TPU Sesudah Update',
+            'alamat' => 'Jl. Baru',
+            'polygon' => [
+                ['lat' => -8.1901, 'lng' => 113.7201],
+                ['lat' => -8.1902, 'lng' => 113.7205],
+                ['lat' => -8.1905, 'lng' => 113.7207],
+            ]
+        ];
+
+        $response = $this->putJson(route('api.tpu.update', $tpu->id), $payload);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.nama', 'TPU Sesudah Update')
+            ->assertJsonPath('data.alamat', 'Jl. Baru')
+            ->assertJsonPath('data.geom.type', 'Polygon')
+            ->assertJsonPath('data.geom.coordinates.0.0.0', 113.7201)
+            ->assertJsonPath('data.geom.coordinates.0.0.1', -8.1901);
+
+        $this->assertDatabaseHas('tpu', [
+            'id' => $tpu->id,
+            'nama' => 'TPU Sesudah Update',
+            'alamat' => 'Jl. Baru',
+        ]);
+    }
+}
