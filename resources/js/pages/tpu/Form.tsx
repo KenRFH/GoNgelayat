@@ -76,7 +76,7 @@ export default function TpuForm({ tpu, makam_list = [] }: Props) {
                 })),
             };
             setSubmitting(true);
-            router.post('/tpu', payload, {
+            router.post('/tpu', payload as any, {
                 onFinish: () => setSubmitting(false),
             });
         }

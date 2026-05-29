@@ -189,4 +189,92 @@ class TpuApiController extends Controller
             ], 404);
         }
     }
+
+    /**
+     * Search closest TPUs based on user's GPS coordinates using ST_Distance and ST_DWithin buffering.
+     *
+     * GET /api/tpu/terdekat
+     */
+    public function getTpuTerdekat(Request $request)
+    {
+        $request->validate([
+            'user_lat' => 'required|numeric|between:-90,90',
+            'user_lng' => 'required|numeric|between:-180,180',
+            'radius_km' => 'nullable|numeric|min:0.1|max:100',
+        ]);
+
+        try {
+            $lat = (float) $request->input('user_lat');
+            $lng = (float) $request->input('user_lng');
+            $radiusKm = (float) $request->input('radius_km', 10.0); // Default radius 10 km
+            $radiusMeter = $radiusKm * 1000.0;
+
+            // Query spasial menggunakan ST_DWithin untuk buffering geografis
+            // ST_Distance menghitung jarak terpendek ke sisi terdekat dari polygon TPU
+            $tpu = Tpu::select('id', 'nama', 'alamat', 'created_at', 'updated_at')
+                ->selectRaw('ST_AsGeoJSON(geom) as geom_json')
+                ->selectRaw('ST_Y(ST_Centroid(geom)) as lat, ST_X(ST_Centroid(geom)) as lng')
+                ->selectRaw('
+                    ST_Distance(
+                        geom::geography,
+                        ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography
+                    ) as jarak_meter
+                ', [$lng, $lat])
+                ->whereNotNull('geom')
+                ->whereRaw('
+                    ST_DWithin(
+                        geom::geography,
+                        ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                        ?
+                    )
+                ', [$lng, $lat, $radiusMeter])
+                ->orderBy('jarak_meter', 'asc')
+                ->get();
+
+            // Transformasi data
+            $tpuCollection = $tpu->map(function ($item) {
+                $meters = (float) $item->jarak_meter;
+
+                // Format jarak otomatis (meter / kilometer)
+                $jarakTeks = $meters >= 1000
+                    ? number_format($meters / 1000, 2, ',', '.') . ' km'
+                    : number_format($meters, 0, ',', '.') . ' m';
+
+                return [
+                    'id' => $item->id,
+                    'nama' => $item->nama,
+                    'alamat' => $item->alamat,
+                    'geom' => json_decode($item->geom_json, true),
+                    'lat' => (float) $item->lat,
+                    'lng' => (float) $item->lng,
+                    'jarak_meter' => round($meters, 2),
+                    'jarak_teks' => $jarakTeks,
+                    'created_at' => $item->created_at,
+                    'updated_at' => $item->updated_at,
+                ];
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Pencarian TPU terdekat dengan buffering berhasil.',
+                'meta' => [
+                    'user_coordinates' => [
+                        'lat' => $lat,
+                        'lng' => $lng,
+                    ],
+                    'buffer_radius_km' => $radiusKm,
+                    'total_found' => $tpuCollection->count(),
+                ],
+                'data' => $tpuCollection,
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error querying closest TPUs: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Terjadi kesalahan sistem saat menghitung jarak TPU. Detail: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }

@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('makam/terdekat', [MakamApiController::class, 'getMakamTerdekat'])->name('api.makam.terdekat');
+Route::get('tpu/terdekat', [TpuApiController::class, 'getTpuTerdekat'])->name('api.tpu.terdekat');
 
 Route::prefix('tpu')->name('api.tpu.')->group(function () {
     Route::post('/', [TpuApiController::class, 'store'])->name('store');

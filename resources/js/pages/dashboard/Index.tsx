@@ -154,74 +154,78 @@ export default function DashboardIndex({ stats, recent, mode }: Props) {
                     </div>
                 ) : isSuperadmin ? (
                     // Superadmin: tabel TPU
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                                <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Nama TPU</th>
-                                <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Alamat</th>
-                                <th style={{ textAlign: 'center', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Blok</th>
-                                <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {recent.map(t => (
-                                <tr key={t.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
-                                    <td style={{ padding: '0.6rem 0.5rem', fontWeight: 500 }}>{t.nama}</td>
-                                    <td style={{ padding: '0.6rem 0.5rem', color: '#6b7280', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {t.alamat || '—'}
-                                    </td>
-                                    <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>
-                                        <span style={{
-                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                            minWidth: '22px', height: '22px', padding: '0 6px',
-                                            background: (t.blok_tpu_count ?? 0) > 0 ? '#0a0a0a' : '#f5f5f5',
-                                            color: (t.blok_tpu_count ?? 0) > 0 ? '#fff' : '#9ca3af',
-                                            borderRadius: '99px', fontSize: '0.72rem', fontWeight: 600,
-                                        }}>
-                                            {t.blok_tpu_count ?? 0}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right' }}>
-                                        <Link href={`/tpu/${t.id}`} style={{ fontSize: '0.78rem', color: '#6b7280', textDecoration: 'none' }}>
-                                            Kelola →
-                                        </Link>
-                                    </td>
+                    <div className="table-wrapper">
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                                    <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Nama TPU</th>
+                                    <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Alamat</th>
+                                    <th style={{ textAlign: 'center', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Blok</th>
+                                    <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Aksi</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {recent.map(t => (
+                                    <tr key={t.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                                        <td style={{ padding: '0.6rem 0.5rem', fontWeight: 500 }}>{t.nama}</td>
+                                        <td style={{ padding: '0.6rem 0.5rem', color: '#6b7280', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {t.alamat || '—'}
+                                        </td>
+                                        <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>
+                                            <span style={{
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                minWidth: '22px', height: '22px', padding: '0 6px',
+                                                background: (t.blok_tpu_count ?? 0) > 0 ? '#0a0a0a' : '#f5f5f5',
+                                                color: (t.blok_tpu_count ?? 0) > 0 ? '#fff' : '#9ca3af',
+                                                borderRadius: '99px', fontSize: '0.72rem', fontWeight: 600,
+                                            }}>
+                                                {t.blok_tpu_count ?? 0}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right' }}>
+                                            <Link href={`/tpu/${t.id}`} style={{ fontSize: '0.78rem', color: '#6b7280', textDecoration: 'none' }}>
+                                                Kelola →
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 ) : (
                     // Admin: tabel Makam
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                                <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Nama Nisan</th>
-                                <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>TPU</th>
-                                <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Tgl Wafat</th>
-                                <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {recent.map(m => (
-                                <tr key={m.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
-                                    <td style={{ padding: '0.6rem 0.5rem', fontWeight: 500 }}>
-                                        {m.nama_nisan || <span style={{ color: '#9ca3af' }}>(Tanpa Nama)</span>}
-                                    </td>
-                                    <td style={{ padding: '0.6rem 0.5rem', color: '#6b7280' }}>
-                                        {m.tpu_nama || '—'}
-                                    </td>
-                                    <td style={{ padding: '0.6rem 0.5rem', color: '#6b7280', whiteSpace: 'nowrap' }}>
-                                        {formatDate(m.tanggal_wafat)}
-                                    </td>
-                                    <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right' }}>
-                                        <Link href={`/makam/${m.id}/edit`} style={{ fontSize: '0.78rem', color: '#6b7280', textDecoration: 'none' }}>
-                                            Edit →
-                                        </Link>
-                                    </td>
+                    <div className="table-wrapper">
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                                    <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Nama Nisan</th>
+                                    <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>TPU</th>
+                                    <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Tgl Wafat</th>
+                                    <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Aksi</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {recent.map(m => (
+                                    <tr key={m.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                                        <td style={{ padding: '0.6rem 0.5rem', fontWeight: 500 }}>
+                                            {m.nama_nisan || <span style={{ color: '#9ca3af' }}>(Tanpa Nama)</span>}
+                                        </td>
+                                        <td style={{ padding: '0.6rem 0.5rem', color: '#6b7280' }}>
+                                            {m.tpu_nama || '—'}
+                                        </td>
+                                        <td style={{ padding: '0.6rem 0.5rem', color: '#6b7280', whiteSpace: 'nowrap' }}>
+                                            {formatDate(m.tanggal_wafat)}
+                                        </td>
+                                        <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right' }}>
+                                            <Link href={`/makam/${m.id}/edit`} style={{ fontSize: '0.78rem', color: '#6b7280', textDecoration: 'none' }}>
+                                                Edit →
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
 

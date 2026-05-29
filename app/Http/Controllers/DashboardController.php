@@ -16,12 +16,11 @@ class DashboardController extends Controller
         $user = Auth::user();
 
         if ($user->role === 'superadmin') {
-            // Superadmin: fokus ke TPU & struktur
             $stats = [
                 'total_tpu'   => Tpu::count(),
                 'total_blok'  => BlokTpu::count(),
                 'total_admin' => User::where('role', 'admin')->count(),
-                'total_makam' => Makam::count(), // info saja
+                'total_makam' => Makam::count(), 
             ];
 
             $recent = Tpu::withCount('blokTpu')

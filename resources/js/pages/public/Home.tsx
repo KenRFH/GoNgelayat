@@ -15,6 +15,7 @@ interface MakamResult {
     lat: number | null;
     lng: number | null;
     jarak_teks?: string;
+    polygon_geojson?: any;
 }
 
 interface Props {
@@ -92,22 +93,31 @@ const IconArrow = () => (
 );
 
 // ── Result Card ────────────────────────────────────────────────
-function MakamCard({ m, index }: { m: MakamResult; index: number }) {
+function MakamCard({ m, index, isSelected = false, onClick }: { m: MakamResult; index: number; isSelected?: boolean; onClick?: () => void }) {
     const age = calcAge(m.tanggal_lahir, m.tanggal_wafat);
 
     return (
-        <div className="makam-card" style={{ animationDelay: `${index * 0.06}s` }}>
+        <div 
+            className={`makam-card ${isSelected ? 'makam-card--selected' : ''}`} 
+            style={{ 
+                animationDelay: `${index * 0.06}s`,
+                borderColor: isSelected ? '#2563eb' : undefined,
+                background: isSelected ? 'rgba(37, 99, 235, 0.03)' : undefined,
+                cursor: onClick ? 'pointer' : undefined
+            }}
+            onClick={onClick}
+        >
             <div className="makam-card-left">
-                <div className="makam-avatar">
+                <div className="makam-avatar" style={{ background: isSelected ? 'rgba(37, 99, 235, 0.1)' : undefined, color: isSelected ? '#2563eb' : undefined }}>
                     <IconGrave size={22} />
                 </div>
             </div>
 
             <div className="makam-card-body">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                    <h3 className="makam-name" style={{ margin: 0 }}>{m.nama_nisan || '(Tanpa Nama)'}</h3>
+                    <h3 className="makam-name" style={{ margin: 0, color: isSelected ? '#2563eb' : undefined }}>{m.nama_nisan || '(Tanpa Nama)'}</h3>
                     {m.jarak_teks && (
-                        <span className="makam-distance-badge">
+                        <span className="makam-distance-badge" style={{ background: isSelected ? 'rgba(37, 99, 235, 0.15)' : undefined }}>
                             🚀 {m.jarak_teks}
                         </span>
                     )}
@@ -138,7 +148,7 @@ function MakamCard({ m, index }: { m: MakamResult; index: number }) {
                 )}
             </div>
 
-            <div className="makam-card-arrow">
+            <div className="makam-card-arrow" style={{ color: isSelected ? '#2563eb' : undefined, transform: isSelected ? 'translateX(4px)' : undefined }}>
                 <IconArrow />
             </div>
         </div>
@@ -146,7 +156,7 @@ function MakamCard({ m, index }: { m: MakamResult; index: number }) {
 }
 
 // ── Map View ───────────────────────────────────────────────────
-function MapView({ results, userCoords }: { results: MakamResult[]; userCoords: { lat: number; lng: number } | null }) {
+function MapView({ results, userCoords, selectedTpuId }: { results: MakamResult[]; userCoords: { lat: number; lng: number } | null; selectedTpuId?: number | null }) {
     const mapRef = useRef<HTMLDivElement>(null);
     const leafletMap = useRef<any>(null);
 
@@ -210,7 +220,7 @@ function MapView({ results, userCoords }: { results: MakamResult[]; userCoords: 
 
                 const popup = `
                     <div style="min-width:180px;font-family:inherit">
-                        <div style="font-weight:600;font-size:0.9rem;margin-bottom:4px">
+                        <div style="font-weight:600;font-size:0.9rem;margin-bottom:4px;color:#0a0a0a">
                             ${m.nama_nisan || '(Tanpa Nama)'}
                         </div>
                         ${m.tpu_nama ? `<div style="font-size:0.78rem;color:#6b7280">📍 ${m.tpu_nama}${m.blok_nama ? ` — ${m.blok_nama}` : ''}</div>` : ''}
@@ -222,12 +232,115 @@ function MapView({ results, userCoords }: { results: MakamResult[]; userCoords: 
                         ${m.jarak_teks ? `<div style="font-size:0.78rem;color:#2563eb;font-weight:600;margin-top:5px;background:rgba(59,130,246,0.08);padding:3px 6px;border-radius:4px;border:1px solid rgba(59,130,246,0.12)">🚀 ${m.jarak_teks} dari lokasi Anda</div>` : ''}
                     </div>`;
 
-                L.marker([lat, lng])
-                    .addTo(map)
-                    .bindPopup(popup, { maxWidth: 240 });
+                if (m.polygon_geojson) {
+                    const polyLayer = L.geoJSON(m.polygon_geojson, {
+                        style: {
+                            color: '#2563eb',
+                            weight: 2.5,
+                            fillColor: '#3b82f6',
+                            fillOpacity: 0.15
+                        }
+                    }).addTo(map);
+
+                    polyLayer.bindPopup(popup, { maxWidth: 240 });
+
+                    // Push polygon boundaries to coordinate bounds
+                    const polyBounds = polyLayer.getBounds();
+                    bounds.push([polyBounds.getSouthWest().lat, polyBounds.getSouthWest().lng]);
+                    bounds.push([polyBounds.getNorthEast().lat, polyBounds.getNorthEast().lng]);
+                } else {
+                    L.marker([lat, lng])
+                        .addTo(map)
+                        .bindPopup(popup, { maxWidth: 240 });
+                }
             });
 
-            if (bounds.length > 1) {
+            // Define fallback in case OSRM API is offline
+            const drawStraightLineFallback = (leafletL: any, user: any, target: any) => {
+                const fallbackLine = leafletL.polyline(
+                    [[user.lat, user.lng], [target.lat, target.lng]],
+                    {
+                        color: '#ef4444',
+                        weight: 3.5,
+                        dashArray: '8, 12',
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        className: 'animated-polyline'
+                    }
+                ).addTo(map);
+
+                fallbackLine.bindPopup(`
+                    <div style="font-family: inherit; font-size: 0.8rem; padding: 4px; text-align: center; min-width: 140px;">
+                        <div style="font-weight: 700; color: #ef4444; margin-bottom: 2px;">🧭 Rute Udara (Garis Lurus)</div>
+                        <div>Jarak: <strong>${target.jarak_teks}</strong></div>
+                        <div style="font-size:0.7rem;color:#9ca3af;margin-top:2px">OSRM Routing API Offline</div>
+                    </div>
+                `);
+
+                map.fitBounds(fallbackLine.getBounds(), { padding: [80, 80] });
+                
+                setTimeout(() => {
+                    fallbackLine.openPopup();
+                }, 400);
+            };
+
+            // Draw routing polyline along actual roads if a TPU is selected and user coordinates are available
+            let routeBoundsDrawn = false;
+            if (userCoords && selectedTpuId) {
+                const selected = results.find(r => r.id === selectedTpuId);
+                if (selected && selected.lat && selected.lng) {
+                    const url = `https://router.project-osrm.org/route/v1/driving/${userCoords.lng},${userCoords.lat};${selected.lng},${selected.lat}?overview=full&geometries=geojson`;
+                    
+                    fetch(url)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+                                const route = data.routes[0];
+                                const roadCoords = route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
+                                const roadDistance = route.distance;
+                                const roadDuration = route.duration;
+                                
+                                const distanceText = roadDistance >= 1000 
+                                    ? (roadDistance / 1000).toFixed(2) + ' km'
+                                    : Math.round(roadDistance) + ' m';
+                                const durationText = Math.round(roadDuration / 60) + ' menit';
+
+                                const routingLine = L.polyline(roadCoords, {
+                                    color: '#2563eb',
+                                    weight: 4,
+                                    dashArray: '8, 12',
+                                    lineCap: 'round',
+                                    lineJoin: 'round',
+                                    className: 'animated-polyline'
+                                }).addTo(map);
+
+                                routingLine.bindPopup(`
+                                    <div style="font-family: inherit; font-size: 0.8rem; padding: 4px; text-align: center; min-width: 160px;">
+                                        <div style="font-weight: 700; color: #2563eb; margin-bottom: 4px;">🧭 Navigasi Rute Jalan</div>
+                                        <div style="margin-bottom: 2px;">Jarak Tempuh: <strong>${distanceText}</strong></div>
+                                        <div>Waktu Berkendara: <strong>${durationText}</strong></div>
+                                    </div>
+                                `);
+
+                                const routeBounds = routingLine.getBounds();
+                                map.fitBounds(routeBounds, { padding: [60, 60], animate: true, duration: 1.2 });
+                                
+                                setTimeout(() => {
+                                    routingLine.openPopup();
+                                }, 400);
+                            } else {
+                                drawStraightLineFallback(L, userCoords, selected);
+                            }
+                        })
+                        .catch(() => {
+                            drawStraightLineFallback(L, userCoords, selected);
+                        });
+                    
+                    routeBoundsDrawn = true;
+                }
+            }
+
+            if (!routeBoundsDrawn && bounds.length > 1) {
                 map.fitBounds(bounds, { padding: [40, 40] });
             }
         });
@@ -236,7 +349,7 @@ function MapView({ results, userCoords }: { results: MakamResult[]; userCoords: 
             leafletMap.current?.remove();
             leafletMap.current = null;
         };
-    }, [results, userCoords]);
+    }, [results, userCoords, selectedTpuId]);
 
     const withCoords = results.filter(m => m.lat && m.lng);
 
@@ -288,6 +401,7 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
     const [isLocating, setIsLocating] = useState(false);
     const [locationError, setLocationError] = useState<string | null>(null);
     const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+    const [selectedTpuId, setSelectedTpuId] = useState<number | null>(null);
 
     const hasFilter = query.trim().length >= 2 || tgl_lahir || tgl_wafat || userCoords !== null;
     const hasAnyInput = searchVal.trim().length >= 1 || filterLahir || filterWafat;
@@ -299,6 +413,7 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
         setResultsTotal(total);
         setUserCoords(null);
         setLocationError(null);
+        setSelectedTpuId(null);
     }, [results, total]);
 
     useEffect(() => {
@@ -328,8 +443,13 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
         setShowFilter(false);
         setUserCoords(null);
         setLocationError(null);
+        setSelectedTpuId(null);
         router.get('/', {}, { preserveState: false });
         setTimeout(() => inputRef.current?.focus(), 100);
+    }
+
+    function handleSelectTpu(m: MakamResult) {
+        setSelectedTpuId(prev => prev === m.id ? null : m.id);
     }
 
     // Trigger high accuracy GPS check and search closest graves via spatial API
@@ -350,15 +470,30 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
                 setUserCoords({ lat, lng });
 
                 try {
-                    const response = await fetch(`/api/makam/terdekat?user_lat=${lat}&user_lng=${lng}`);
+                    const response = await fetch(`/api/tpu/terdekat?user_lat=${lat}&user_lng=${lng}&radius_km=10`);
                     const data = await response.json();
 
                     if (data.status === 'success') {
-                        setResultsList(data.data);
-                        setResultsTotal(data.meta.pagination.total);
+                        const mapped: MakamResult[] = data.data.map((item: any) => ({
+                            id: item.id,
+                            nama_nisan: item.nama,
+                            tanggal_lahir: null,
+                            tanggal_wafat: null,
+                            keterangan: item.alamat,
+                            gambar: null,
+                            tpu_nama: 'Batas Area TPU Spasial (Polygon)',
+                            blok_nama: null,
+                            blok_tpu_id: null,
+                            lat: item.lat,
+                            lng: item.lng,
+                            jarak_teks: item.jarak_teks,
+                            polygon_geojson: item.geom
+                        }));
+                        setResultsList(mapped);
+                        setResultsTotal(data.meta.total_found);
                         setViewMode('map'); // Switch to map view to visually locate them!
                     } else {
-                        setLocationError(data.message || 'Gagal mencari makam terdekat.');
+                        setLocationError(data.message || 'Gagal mencari TPU terdekat.');
                     }
                 } catch (err: any) {
                     setLocationError('Gagal menghubungi server untuk pencarian spasial.');
@@ -497,7 +632,7 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
                                         </>
                                     ) : (
                                         <>
-                                            <span style={{ fontSize: '1.05rem', marginRight: '0.35rem' }}>📍</span> Cari Makam Terdekat dari Saya (GPS)
+                                            <span style={{ fontSize: '1.05rem', marginRight: '0.35rem' }}>📍</span> Cari TPU Terdekat dari Saya (GPS - Buffering 10 km)
                                         </>
                                     )}
                                 </button>
@@ -547,7 +682,7 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
 
                             {!hasFilter && !showFilter && (
                                 <p className="pub-search-hint">
-                                    Masukkan nama nisan, filter tanggal, atau cari makam terdekat dengan GPS
+                                    Masukkan nama nisan, filter tanggal, atau cari TPU terdekat dengan GPS (Buffering)
                                 </p>
                             )}
                         </form>
@@ -578,40 +713,9 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
                                         <p className="pub-results-count">Tidak ada hasil ditemukan</p>
                                     ) : (
                                         <p className="pub-results-count">
-                                            Ditemukan <strong>{resultsTotal}</strong> makam
-                                            {userCoords && <span style={{ color: '#2563eb', fontWeight: 600 }}> (diurutkan berdasarkan terdekat)</span>}
+                                            Ditemukan <strong>{resultsTotal}</strong> {userCoords ? 'TPU terdekat' : 'makam'}
+                                            {userCoords && <span style={{ color: '#2563eb', fontWeight: 600 }}> (diurutkan berdasarkan terdekat dalam radius buffer 10 km)</span>}
                                         </p>
-                                    )}
-
-                                    {/* Toggle List / Map */}
-                                    {resultsTotal > 0 && (
-                                        <div style={{ display: 'flex', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
-                                            <button
-                                                onClick={() => setViewMode('list')}
-                                                style={{
-                                                    padding: '0.35rem 0.875rem', border: 'none', cursor: 'pointer',
-                                                    fontSize: '0.78rem', fontWeight: 500, fontFamily: 'inherit',
-                                                    background: viewMode === 'list' ? '#0a0a0a' : '#fff',
-                                                    color: viewMode === 'list' ? '#fff' : '#6b7280',
-                                                    transition: 'all 0.15s',
-                                                }}
-                                            >
-                                                ☰ Daftar
-                                            </button>
-                                            <button
-                                                onClick={() => setViewMode('map')}
-                                                style={{
-                                                    padding: '0.35rem 0.875rem', border: 'none', cursor: 'pointer',
-                                                    fontSize: '0.78rem', fontWeight: 500, fontFamily: 'inherit',
-                                                    background: viewMode === 'map' ? '#0a0a0a' : '#fff',
-                                                    color: viewMode === 'map' ? '#fff' : '#6b7280',
-                                                    transition: 'all 0.15s',
-                                                    borderLeft: '1px solid #e5e7eb',
-                                                }}
-                                            >
-                                                🗺 Peta
-                                            </button>
-                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -627,17 +731,27 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
                                 </div>
                             )}
 
-                            {resultsTotal > 0 && viewMode === 'list' && (
-                                <div className="pub-result-list">
-                                    {resultsList.map((m, i) => (
-                                        <MakamCard key={m.id} m={m} index={i} />
-                                    ))}
-                                </div>
-                            )}
-
-                            {resultsTotal > 0 && viewMode === 'map' && (
-                                <div className="fade-in">
-                                    <MapView results={resultsList} userCoords={userCoords} />
+                            {resultsTotal > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
+                                    <div className="fade-in">
+                                        <MapView results={resultsList} userCoords={userCoords} selectedTpuId={selectedTpuId} />
+                                    </div>
+                                    <div style={{ borderBottom: '1px solid #e5e7eb', paddingBottom: '0.5rem', marginTop: '0.5rem' }}>
+                                        <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                            📋 Daftar Hasil Detail {userCoords && <span style={{ fontSize: '0.72rem', color: '#6b7280', fontWeight: 400 }}>(Klik kartu untuk menggambar rute navigasi)</span>}
+                                        </h4>
+                                    </div>
+                                    <div className="pub-result-list">
+                                        {resultsList.map((m, i) => (
+                                            <MakamCard 
+                                                key={m.id} 
+                                                m={m} 
+                                                index={i} 
+                                                isSelected={selectedTpuId === m.id}
+                                                onClick={() => handleSelectTpu(m)}
+                                            />
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -1020,6 +1134,26 @@ export default function PublicHome({ query, tgl_lahir, tgl_wafat, results, total
                 @keyframes pulse-ring {
                     0% { transform: scale(0.35); opacity: 1; }
                     80%, 100% { transform: scale(1.2); opacity: 0; }
+                }
+
+                /* Marching Dash Animation for Route Navigation */
+                @keyframes dash {
+                    to {
+                        stroke-dashoffset: -40;
+                    }
+                }
+                .animated-polyline {
+                    animation: dash 2.5s linear infinite;
+                }
+
+                /* Selection state styling for cards */
+                .makam-card {
+                    border: 1px solid #e5e7eb;
+                    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+                }
+                .makam-card--selected {
+                    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.08);
+                    transform: translateY(-2px);
                 }
 
                 /* ==========================================

@@ -74,7 +74,7 @@ function LocationPicker({
 
             // Render TPU polygon awal jika ada
             if (tpuPolygon && tpuPolygon.length > 0) {
-                const latlngs = tpuPolygon.map((p) => [p.lat, p.lng]);
+                const latlngs = tpuPolygon.map((p) => [p.lat, p.lng] as [number, number]);
                 const polygonLayer = L.polygon(latlngs, {
                     color: '#0a0a0a',
                     weight: 3,
@@ -167,7 +167,7 @@ function LocationPicker({
 
             // Gambar polygon TPU baru jika datanya ada
             if (tpuPolygon && tpuPolygon.length > 0) {
-                const latlngs = tpuPolygon.map((p) => [p.lat, p.lng]);
+                const latlngs = tpuPolygon.map((p) => [p.lat, p.lng] as [number, number]);
                 const polygonLayer = L.polygon(latlngs, {
                     color: '#0a0a0a',
                     weight: 3,

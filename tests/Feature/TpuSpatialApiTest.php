@@ -170,4 +170,46 @@ class TpuSpatialApiTest extends TestCase
             'alamat' => 'Jl. Baru',
         ]);
     }
+
+    /**
+     * Test searching closest TPUs within buffer radius (ST_DWithin).
+     */
+    public function test_can_search_closest_tpus_within_buffer_radius(): void
+    {
+        // 1. Buat TPU A (Dekat: jarak ~0-100 meter dari koordinat user)
+        $tpuDekat = Tpu::create([
+            'nama' => 'TPU Dekat',
+            'alamat' => 'Jl. Dekat',
+        ]);
+        $wktDekat = "POLYGON((113.7150 -8.1680, 113.7152 -8.1680, 113.7152 -8.1682, 113.7150 -8.1682, 113.7150 -8.1680))";
+        DB::statement("UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?", [$wktDekat, $tpuDekat->id]);
+
+        // 2. Buat TPU B (Jauh: jarak ~20 km dari koordinat user)
+        $tpuJauh = Tpu::create([
+            'nama' => 'TPU Jauh',
+            'alamat' => 'Jl. Jauh',
+        ]);
+        $wktJauh = "POLYGON((113.8000 -8.3500, 113.8010 -8.3500, 113.8010 -8.3510, 113.8000 -8.3510, 113.8000 -8.3500))";
+        DB::statement("UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?", [$wktJauh, $tpuJauh->id]);
+
+        // 3. Panggil API getTpuTerdekat dengan titik acuan dekat TPU Dekat
+        // User di koordinat: -8.1681, 113.7151
+        $response = $this->getJson(route('api.tpu.terdekat', [
+            'user_lat' => -8.1681,
+            'user_lng' => 113.7151,
+            'radius_km' => 10.0 // Buffer radius 10 km
+        ]));
+
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'success');
+
+        $data = $response->json('data');
+        $names = collect($data)->pluck('nama')->toArray();
+        $this->assertContains('TPU Dekat', $names);
+        $this->assertNotContains('TPU Jauh', $names);
+
+        $tpuDekatRecord = collect($data)->firstWhere('nama', 'TPU Dekat');
+        $this->assertNotNull($tpuDekatRecord);
+        $this->assertLessThan(200, $tpuDekatRecord['jarak_meter']);
+    }
 }
