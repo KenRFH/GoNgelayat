@@ -6,7 +6,8 @@ interface TpuItem {
     id: number;
     nama: string;
     alamat: string | null;
-    blok_tpu_count: number;
+    sisa_lahan_m2?: number | string | null;
+    makam_count: number;
     created_at: string;
 }
 
@@ -29,9 +30,9 @@ function ConfirmModal({ item, onCancel, onConfirm }: {
                 <h3 className="modal-title">Hapus TPU</h3>
                 <p className="modal-desc">
                     Yakin ingin menghapus <strong>{item.nama}</strong>?
-                    {item.blok_tpu_count > 0 && (
+                    {item.makam_count > 0 && (
                         <span style={{ display: 'block', marginTop: '0.4rem', color: '#dc2626', fontSize: '0.8rem' }}>
-                            ⚠ TPU ini memiliki {item.blok_tpu_count} blok yang akan ikut terhapus.
+                            ⚠ TPU ini memiliki {item.makam_count} makam yang akan ikut terhapus.
                         </span>
                     )}
                 </p>
@@ -63,7 +64,7 @@ export default function TpuIndex({ tpu_list }: Props) {
                 <div>
                     <h2 className="section-title">Daftar TPU</h2>
                     <p style={{ margin: '0.15rem 0 0', fontSize: '0.8rem', color: '#6b7280' }}>
-                        Klik nama TPU untuk mengelola blok di dalamnya
+                        Kelola data dan detail TPU
                     </p>
                 </div>
                 <Link href="/tpu/create" className="btn btn-primary btn-sm" id="btn-tambah-tpu">
@@ -88,7 +89,8 @@ export default function TpuIndex({ tpu_list }: Props) {
                                 <th>#</th>
                                 <th>Nama TPU</th>
                                 <th>Alamat</th>
-                                <th style={{ textAlign: 'center' }}>Blok</th>
+                                <th style={{ textAlign: 'center' }}>Sisa Lahan</th>
+                                <th style={{ textAlign: 'center' }}>Makam</th>
                                 <th>Ditambahkan</th>
                                 <th style={{ textAlign: 'right' }}>Aksi</th>
                             </tr>
@@ -124,18 +126,21 @@ export default function TpuIndex({ tpu_list }: Props) {
                                             {tpu.alamat || '—'}
                                         </span>
                                     </td>
+                                    <td style={{ textAlign: 'center', color: '#0a0a0a', fontWeight: 500 }}>
+                                        {tpu.sisa_lahan_m2 ? `${tpu.sisa_lahan_m2} m²` : '—'}
+                                    </td>
                                     <td style={{ textAlign: 'center' }}>
                                         <span style={{
                                             display: 'inline-flex', alignItems: 'center',
                                             justifyContent: 'center',
                                             minWidth: '28px', height: '24px',
                                             padding: '0 0.5rem',
-                                            background: tpu.blok_tpu_count > 0 ? '#0a0a0a' : '#f5f5f5',
-                                            color: tpu.blok_tpu_count > 0 ? '#fff' : '#9ca3af',
+                                            background: tpu.makam_count > 0 ? '#0a0a0a' : '#f5f5f5',
+                                            color: tpu.makam_count > 0 ? '#fff' : '#9ca3af',
                                             borderRadius: '99px',
                                             fontSize: '0.75rem', fontWeight: 600,
                                         }}>
-                                            {tpu.blok_tpu_count}
+                                            {tpu.makam_count}
                                         </span>
                                     </td>
                                     <td style={{ color: '#6b7280', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
@@ -144,7 +149,7 @@ export default function TpuIndex({ tpu_list }: Props) {
                                     <td>
                                         <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
                                             <Link href={`/tpu/${tpu.id}`} className="btn btn-secondary btn-sm">
-                                                Kelola Blok
+                                                Detail TPU
                                             </Link>
                                             <Link href={`/tpu/${tpu.id}/edit`} className="btn btn-secondary btn-sm">
                                                 Edit

@@ -14,7 +14,7 @@ return new class extends Migration
     {
         Schema::create('makam', function (Blueprint $table) {
             $table->increments('id');
-            $table->unsignedInteger('blok_tpu_id')->nullable();
+            $table->unsignedInteger('tpu_id')->nullable();
             $table->unsignedInteger('user_id')->nullable();
             $table->string('nama_nisan', 64)->nullable();
             $table->date('tanggal_lahir')->nullable();
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->string('keterangan', 1000)->nullable();
             $table->timestamps();
 
-            $table->foreign('blok_tpu_id')->references('id')->on('blok_tpu')->nullOnDelete();
+            $table->foreign('tpu_id')->references('id')->on('tpu')->nullOnDelete();
             $table->foreign('user_id')->references('id')->on('user')->nullOnDelete();
         });
 

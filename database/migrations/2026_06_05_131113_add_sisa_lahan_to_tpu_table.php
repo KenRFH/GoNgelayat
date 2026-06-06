@@ -11,11 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('blok', function (Blueprint $table) {
-            $table->increments('id');
-            $table->string('nama', 64)->nullable();
-            $table->integer('nomor')->nullable();
-            $table->timestamps();
+        Schema::table('tpu', function (Blueprint $table) {
+            $table->decimal('sisa_lahan_m2', 10, 2)->nullable()->after('alamat');
         });
     }
 
@@ -24,6 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('blok');
+        Schema::table('tpu', function (Blueprint $table) {
+            $table->dropColumn('sisa_lahan_m2');
+        });
     }
 };

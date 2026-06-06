@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BlokTpu;
 use App\Models\Makam;
 use App\Models\Tpu;
 use Illuminate\Http\Request;
@@ -19,12 +18,12 @@ class MakamController extends Controller
         $tglLahir   = $request->input('tgl_lahir', '');
         $tglWafat   = $request->input('tgl_wafat', '');
 
-        $db = Makam::with('blokTpu.tpu');
+        $db = Makam::with('tpu');
 
         if ($q) {
             $db->where(function ($query) use ($q) {
                 $query->where('nama_nisan', 'ilike', "%{$q}%")
-                      ->orWhereHas('blokTpu.tpu', fn ($q2) => $q2->where('nama', 'ilike', "%{$q}%"));
+                      ->orWhereHas('tpu', fn ($q2) => $q2->where('nama', 'ilike', "%{$q}%"));
             });
         }
 
@@ -45,8 +44,8 @@ class MakamController extends Controller
                 'tanggal_wafat' => $m->tanggal_wafat?->format('Y-m-d'),
                 'gambar'        => $m->gambar,
                 'keterangan'    => $m->keterangan,
-                'tpu_nama'      => optional(optional($m->blokTpu)->tpu)->nama,
-                'blok_tpu_id'   => $m->blok_tpu_id,
+                'tpu_nama'      => optional($m->tpu)->nama,
+                'tpu_id'        => $m->tpu_id,
                 'created_at'    => $m->created_at?->format('Y-m-d'),
             ]);
 
@@ -68,7 +67,6 @@ class MakamController extends Controller
         return Inertia::render('makam/Form', [
             'makam'     => null,
             'tpu_list'  => $this->getTpuList(),
-            'blok_list' => $this->getBlokList(),
             'auth'      => ['user' => Auth::user()->only('name', 'email', 'role')],
         ]);
     }
@@ -76,7 +74,7 @@ class MakamController extends Controller
     public function store(Request $request)
     {
         // Inertia forceFormData mengirim null sebagai string — normalkan dulu
-        foreach (['blok_tpu_id', 'lat', 'lng'] as $field) {
+        foreach (['tpu_id', 'lat', 'lng'] as $field) {
             if ($request->input($field) === '' || $request->input($field) === 'null') {
                 $request->merge([$field => null]);
             }
@@ -84,7 +82,7 @@ class MakamController extends Controller
 
         $validated = $request->validate([
             'nama_nisan'    => 'nullable|string|max:64',
-            'blok_tpu_id'   => 'nullable|integer|exists:blok_tpu,id',
+            'tpu_id'        => 'nullable|integer|exists:tpu,id',
             'tanggal_lahir' => 'nullable|date',
             'tanggal_wafat' => 'nullable|date|after_or_equal:tanggal_lahir',
             'keterangan'    => 'nullable|string|max:1000',
@@ -128,8 +126,7 @@ class MakamController extends Controller
             'makam'     => [
                 'id'            => $makam->id,
                 'nama_nisan'    => $makam->nama_nisan,
-                'blok_tpu_id'   => $makam->blok_tpu_id,
-                'tpu_id'        => optional($makam->blokTpu)->tpu_id,
+                'tpu_id'        => $makam->tpu_id,
                 'tanggal_lahir' => $makam->tanggal_lahir?->format('Y-m-d'),
                 'tanggal_wafat' => $makam->tanggal_wafat?->format('Y-m-d'),
                 'keterangan'    => $makam->keterangan,
@@ -138,7 +135,6 @@ class MakamController extends Controller
                 'lng'           => $geo ? (float) $geo->lng : null,
             ],
             'tpu_list'  => $this->getTpuList(),
-            'blok_list' => $this->getBlokList(),
             'auth'      => ['user' => Auth::user()->only('name', 'email', 'role')],
         ]);
     }
@@ -146,7 +142,7 @@ class MakamController extends Controller
     public function update(Request $request, Makam $makam)
     {
         // Inertia forceFormData mengirim null sebagai string — normalkan dulu
-        foreach (['blok_tpu_id', 'lat', 'lng'] as $field) {
+        foreach (['tpu_id', 'lat', 'lng'] as $field) {
             if ($request->input($field) === '' || $request->input($field) === 'null') {
                 $request->merge([$field => null]);
             }
@@ -154,7 +150,7 @@ class MakamController extends Controller
 
         $validated = $request->validate([
             'nama_nisan'    => 'nullable|string|max:64',
-            'blok_tpu_id'   => 'nullable|integer|exists:blok_tpu,id',
+            'tpu_id'        => 'nullable|integer|exists:tpu,id',
             'tanggal_lahir' => 'nullable|date',
             'tanggal_wafat' => 'nullable|date|after_or_equal:tanggal_lahir',
             'keterangan'    => 'nullable|string|max:1000',
@@ -196,21 +192,6 @@ class MakamController extends Controller
     }
 
     // ── Helper ──────────────────────────────────────────────────
-
-    private function getBlokList(): array
-    {
-        return BlokTpu::with('tpu')
-            ->get()
-            ->map(fn ($b) => [
-                'id'       => $b->id,
-                'tpu_id'   => $b->tpu_id,
-                'label'    => optional($b->tpu)->nama
-                    ? "Blok #{$b->id} — " . $b->tpu->nama
-                    : "Blok #{$b->id}",
-                'tpu_nama' => optional($b->tpu)->nama,
-            ])
-            ->toArray();
-    }
 
     private function getTpuList(): array
     {

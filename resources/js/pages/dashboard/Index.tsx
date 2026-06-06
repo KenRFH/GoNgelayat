@@ -5,7 +5,6 @@ import AdminLayout from '../../layouts/AdminLayout';
 // ── Types ──────────────────────────────────────────────────────
 interface Stats {
     total_tpu?: number;
-    total_blok?: number;
     total_admin?: number;
     total_makam?: number;
 }
@@ -15,7 +14,6 @@ interface RecentItem {
     // superadmin
     nama?: string;
     alamat?: string;
-    blok_tpu_count?: number;
     // admin
     nama_nisan?: string;
     tpu_nama?: string;
@@ -102,7 +100,7 @@ export default function DashboardIndex({ stats, recent, mode }: Props) {
                 </h2>
                 <p style={{ margin: '0.1rem 0 0', fontSize: '0.82rem', color: '#6b7280' }}>
                     {isSuperadmin
-                        ? 'Kelola TPU, blok, dan akun pengguna.'
+                        ? 'Kelola TPU dan akun pengguna.'
                         : 'Kelola data makam di TPU yang ditugaskan.'}
                 </p>
             </div>
@@ -112,14 +110,12 @@ export default function DashboardIndex({ stats, recent, mode }: Props) {
                 {isSuperadmin ? (
                     <>
                         <StatCard label="Total TPU" value={stats.total_tpu} icon={<IconMap />} accent />
-                        <StatCard label="Total Blok" value={stats.total_blok} icon={<IconLayers />} />
                         <StatCard label="Admin" value={stats.total_admin} icon={<IconUsers />} />
                         <StatCard label="Total Makam" value={stats.total_makam} icon={<IconGrave />} />
                     </>
                 ) : (
                     <>
                         <StatCard label="Total Makam" value={stats.total_makam} icon={<IconGrave />} accent />
-                        <StatCard label="Total Blok" value={stats.total_blok} icon={<IconLayers />} />
                         <StatCard label="Total TPU" value={stats.total_tpu} icon={<IconMap />} />
                     </>
                 )}
@@ -160,7 +156,6 @@ export default function DashboardIndex({ stats, recent, mode }: Props) {
                                 <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
                                     <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Nama TPU</th>
                                     <th style={{ textAlign: 'left', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Alamat</th>
-                                    <th style={{ textAlign: 'center', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Blok</th>
                                     <th style={{ textAlign: 'right', padding: '0.4rem 0.5rem', fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>Aksi</th>
                                 </tr>
                             </thead>
@@ -170,17 +165,6 @@ export default function DashboardIndex({ stats, recent, mode }: Props) {
                                         <td style={{ padding: '0.6rem 0.5rem', fontWeight: 500 }}>{t.nama}</td>
                                         <td style={{ padding: '0.6rem 0.5rem', color: '#6b7280', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {t.alamat || '—'}
-                                        </td>
-                                        <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>
-                                            <span style={{
-                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                                minWidth: '22px', height: '22px', padding: '0 6px',
-                                                background: (t.blok_tpu_count ?? 0) > 0 ? '#0a0a0a' : '#f5f5f5',
-                                                color: (t.blok_tpu_count ?? 0) > 0 ? '#fff' : '#9ca3af',
-                                                borderRadius: '99px', fontSize: '0.72rem', fontWeight: 600,
-                                            }}>
-                                                {t.blok_tpu_count ?? 0}
-                                            </span>
                                         </td>
                                         <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right' }}>
                                             <Link href={`/tpu/${t.id}`} style={{ fontSize: '0.78rem', color: '#6b7280', textDecoration: 'none' }}>

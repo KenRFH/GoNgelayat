@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tpu;
+use App\Models\PenjualBunga;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -23,6 +24,12 @@ class TpuApiController extends Controller
             'polygon' => 'required|array|min:3',
             'polygon.*.lat' => 'required|numeric|between:-90,90',
             'polygon.*.lng' => 'required|numeric|between:-180,180',
+            'penjual_bunga' => 'nullable|array',
+            'penjual_bunga.*.nama_toko' => 'required|string|max:100',
+            'penjual_bunga.*.alamat'    => 'nullable|string|max:1000',
+            'penjual_bunga.*.no_hp'     => 'nullable|string|max:20',
+            'penjual_bunga.*.lat'       => 'required|numeric|between:-90,90',
+            'penjual_bunga.*.lng'       => 'required|numeric|between:-180,180',
         ]);
 
         try {
@@ -53,6 +60,20 @@ class TpuApiController extends Controller
                     "UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?",
                     [$wktString, $tpu->id]
                 );
+
+                // Simpan penjual bunga
+                foreach ($request->input('penjual_bunga', []) as $pb) {
+                    $penjual = PenjualBunga::create([
+                        'nama_toko' => $pb['nama_toko'],
+                        'alamat'    => $pb['alamat'] ?? null,
+                        'no_hp'     => $pb['no_hp'] ?? null,
+                    ]);
+
+                    DB::update(
+                        "UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                        [$pb['lng'], $pb['lat'], $penjual->id]
+                    );
+                }
 
                 return $tpu;
             });
@@ -98,6 +119,13 @@ class TpuApiController extends Controller
             'polygon' => 'required|array|min:3',
             'polygon.*.lat' => 'required|numeric|between:-90,90',
             'polygon.*.lng' => 'required|numeric|between:-180,180',
+            'penjual_bunga' => 'nullable|array',
+            'penjual_bunga.*.id'        => 'nullable|integer|exists:penjual_bunga,id',
+            'penjual_bunga.*.nama_toko' => 'required|string|max:100',
+            'penjual_bunga.*.alamat'    => 'nullable|string|max:1000',
+            'penjual_bunga.*.no_hp'     => 'nullable|string|max:20',
+            'penjual_bunga.*.lat'       => 'required|numeric|between:-90,90',
+            'penjual_bunga.*.lng'       => 'required|numeric|between:-180,180',
         ]);
 
         try {
@@ -118,6 +146,9 @@ class TpuApiController extends Controller
 
             // Update data dalam transaksi database
             DB::transaction(function () use ($request, $tpu, $wktString) {
+                // Ambil geom lama sebelum di-update untuk sinkronisasi penjual bunga
+                $oldGeom = DB::table('tpu')->where('id', $tpu->id)->value('geom');
+
                 $tpu->update([
                     'nama' => $request->nama,
                     'alamat' => $request->alamat,
@@ -128,6 +159,45 @@ class TpuApiController extends Controller
                     "UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?",
                     [$wktString, $tpu->id]
                 );
+
+                // Sync Penjual Bunga
+                $inputSellers = $request->input('penjual_bunga', []);
+                $inputIds = collect($inputSellers)->pluck('id')->filter()->toArray();
+
+                // Hapus penjual bunga lama yang secara spasial ada di dalam oldGeom TPU tetapi ID-nya tidak ada dalam payload update
+                if ($oldGeom) {
+                    PenjualBunga::whereRaw('ST_Within(geom, ?)', [$oldGeom])
+                        ->whereNotIn('id', $inputIds)
+                        ->delete();
+                }
+
+                // Update/Create penjual bunga dari payload
+                foreach ($inputSellers as $pb) {
+                    if (!empty($pb['id'])) {
+                        $seller = PenjualBunga::find($pb['id']);
+                        if ($seller) {
+                            $seller->update([
+                                'nama_toko' => $pb['nama_toko'],
+                                'alamat'    => $pb['alamat'] ?? null,
+                                'no_hp'     => $pb['no_hp'] ?? null,
+                            ]);
+                            DB::update(
+                                "UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                                [$pb['lng'], $pb['lat'], $seller->id]
+                            );
+                        }
+                    } else {
+                        $seller = PenjualBunga::create([
+                            'nama_toko' => $pb['nama_toko'],
+                            'alamat'    => $pb['alamat'] ?? null,
+                            'no_hp'     => $pb['no_hp'] ?? null,
+                        ]);
+                        DB::update(
+                            "UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                            [$pb['lng'], $pb['lat'], $seller->id]
+                        );
+                    }
+                }
             });
 
             // Ambil kembali TPU beserta representasi GeoJSON-nya
@@ -166,8 +236,9 @@ class TpuApiController extends Controller
     public function show($id)
     {
         try {
-            $tpu = Tpu::select('id', 'nama', 'alamat', 'created_at', 'updated_at')
+            $tpu = Tpu::select('id', 'nama', 'alamat', 'sisa_lahan_m2', 'created_at', 'updated_at')
                 ->selectRaw('ST_AsGeoJSON(geom) as geom')
+                ->selectRaw('ST_Area(geom::geography) as luas_m2')
                 ->findOrFail($id);
 
             return response()->json([
@@ -176,7 +247,9 @@ class TpuApiController extends Controller
                     'id' => $tpu->id,
                     'nama' => $tpu->nama,
                     'alamat' => $tpu->alamat,
+                    'sisa_lahan_m2' => $tpu->sisa_lahan_m2,
                     'geom' => json_decode($tpu->geom, true),
+                    'luas_m2' => $tpu->luas_m2 ? round((float) $tpu->luas_m2, 2) : null,
                     'created_at' => $tpu->created_at,
                     'updated_at' => $tpu->updated_at,
                 ]
@@ -187,6 +260,52 @@ class TpuApiController extends Controller
                 'status' => 'error',
                 'message' => 'Data TPU tidak ditemukan atau terjadi kesalahan server.'
             ], 404);
+        }
+    }
+
+
+    /**
+     * Get all graves located within the boundary of a TPU using ST_Within.
+     *
+     * GET /api/tpu/{id}/makam-dalam-batas
+     */
+    public function getMakamDalamBatas($id)
+    {
+        try {
+            $tpu = Tpu::findOrFail($id);
+
+            $makam = \App\Models\Makam::select('id', 'tpu_id', 'nama_nisan', 'tanggal_lahir', 'tanggal_wafat', 'gambar', 'keterangan')
+                ->selectRaw('ST_Y(geom) as lat, ST_X(geom) as lng')
+                ->whereRaw('
+                    ST_Within(
+                        geom,
+                        (SELECT geom FROM tpu WHERE id = ?)
+                    )
+                ', [$id])
+                ->whereNotNull('geom')
+                ->get()
+                ->map(fn($item) => [
+                    'id'            => $item->id,
+                    'nama_nisan'    => $item->nama_nisan,
+                    'tanggal_lahir' => $item->tanggal_lahir?->format('Y-m-d'),
+                    'tanggal_wafat' => $item->tanggal_wafat?->format('Y-m-d'),
+                    'gambar'        => $item->gambar ? asset('storage/' . $item->gambar) : null,
+                    'keterangan'    => $item->keterangan,
+                    'lat'           => (float) $item->lat,
+                    'lng'           => (float) $item->lng,
+                ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Berhasil mengambil daftar makam di dalam batas TPU.',
+                'data' => $makam
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error querying ST_Within: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Terjadi kesalahan server saat menyaring makam di dalam batas TPU.'
+            ], 500);
         }
     }
 

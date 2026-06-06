@@ -18,7 +18,7 @@ class PublicController extends Controller
         $hasFilter = strlen($query) >= 2 || $tanggalLahir || $tanggalWafat;
 
         if ($hasFilter) {
-            $db = Makam::with(['blokTpu.tpu']);
+            $db = Makam::with(['tpu']);
 
             if (strlen($query) >= 2) {
                 $db->where('nama_nisan', 'ilike', "%{$query}%");
@@ -53,9 +53,8 @@ class PublicController extends Controller
                         'tanggal_wafat' => $m->tanggal_wafat?->format('Y-m-d'),
                         'keterangan'    => $m->keterangan,
                         'gambar'        => $m->gambar ? asset('storage/' . $m->gambar) : null,
-                        'tpu_nama'      => optional(optional($m->blokTpu)->tpu)->nama,
-                        'blok_nama'     => optional(optional($m->blokTpu)->blok)->nama,
-                        'blok_tpu_id'   => $m->blok_tpu_id,
+                        'tpu_nama'      => optional($m->tpu)->nama,
+                        'tpu_id'        => $m->tpu_id,
                         'lat'           => $geo ? (float) $geo->lat : null,
                         'lng'           => $geo ? (float) $geo->lng : null,
                     ];
@@ -68,6 +67,7 @@ class PublicController extends Controller
             'tgl_wafat'     => $tanggalWafat,
             'results'       => $results,
             'total'         => $results->count(),
+            'tpu_list_all'  => \App\Models\Tpu::orderBy('nama')->get(['id', 'nama']),
         ]);
     }
 }

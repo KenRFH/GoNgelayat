@@ -2,10 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Blok;
-use App\Models\BlokTpu;
 use App\Models\Tpu;
 use App\Models\User;
+use App\Models\PenjualBunga;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -15,9 +14,9 @@ class TpuController extends Controller
 {
     public function index()
     {
-        $tpu = Tpu::withCount('blokTpu')
+        $tpu = Tpu::withCount('makam')
             ->orderBy('created_at', 'desc')
-            ->get(['id', 'nama', 'alamat', 'created_at']);
+            ->get(['id', 'nama', 'alamat', 'sisa_lahan_m2', 'created_at']);
 
         return Inertia::render('tpu/Index', [
             'tpu_list' => $tpu,
@@ -39,12 +38,16 @@ class TpuController extends Controller
         $request->validate([
             'nama'         => 'required|string|max:64',
             'alamat'       => 'nullable|string|max:1000',
+            'sisa_lahan_m2'=> 'nullable|numeric|min:0',
             'polygon'      => 'required|array|min:3',
             'polygon.*.lat' => 'required|numeric|between:-90,90',
             'polygon.*.lng' => 'required|numeric|between:-180,180',
-            'blok'         => 'nullable|array',
-            'blok.*.nama'  => 'nullable|string|max:64',
-            'blok.*.nomor' => 'nullable|integer',
+            'penjual_bunga' => 'nullable|array',
+            'penjual_bunga.*.nama_toko' => 'required|string|max:100',
+            'penjual_bunga.*.alamat'    => 'nullable|string|max:1000',
+            'penjual_bunga.*.no_hp'     => 'nullable|string|max:20',
+            'penjual_bunga.*.lat'       => 'required|numeric|between:-90,90',
+            'penjual_bunga.*.lng'       => 'required|numeric|between:-180,180',
         ]);
 
         $polygon = $request->input('polygon');
@@ -62,6 +65,7 @@ class TpuController extends Controller
             $tpu = Tpu::create([
                 'nama'   => $request->nama,
                 'alamat' => $request->alamat,
+                'sisa_lahan_m2' => $request->sisa_lahan_m2,
             ]);
 
             // Simpan geometry polygon PostGIS
@@ -70,16 +74,17 @@ class TpuController extends Controller
                 [$wktString, $tpu->id]
             );
 
-            foreach ($request->input('blok', []) as $b) {
-                $blok = Blok::create([
-                    'nama'  => $b['nama']  ?? null,
-                    'nomor' => $b['nomor'] ?? null,
+            foreach ($request->input('penjual_bunga', []) as $pb) {
+                $penjual = PenjualBunga::create([
+                    'nama_toko' => $pb['nama_toko'],
+                    'alamat'    => $pb['alamat'] ?? null,
+                    'no_hp'     => $pb['no_hp'] ?? null,
                 ]);
 
-                BlokTpu::create([
-                    'blok_id' => $blok->id,
-                    'tpu_id'  => $tpu->id,
-                ]);
+                DB::update(
+                    "UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                    [$pb['lng'], $pb['lat'], $penjual->id]
+                );
             }
 
             $this->newTpuId = $tpu->id;
@@ -92,11 +97,11 @@ class TpuController extends Controller
     private ?int $newTpuId = null;
 
     /**
-     * Detail TPU + daftar blok di dalamnya.
+     * Detail TPU + daftar makam di dalamnya.
      */
     public function show(Tpu $tpu)
     {
-        $tpuData = Tpu::select('id', 'nama', 'alamat', 'created_at')
+        $tpuData = Tpu::select('id', 'nama', 'alamat', 'sisa_lahan_m2', 'created_at')
             ->selectRaw('ST_AsGeoJSON(geom) as geom_json')
             ->findOrFail($tpu->id);
 
@@ -117,40 +122,44 @@ class TpuController extends Controller
             }
         }
 
-        $blokList = BlokTpu::with('blok')
-            ->where('tpu_id', $tpu->id)
-            ->get()
-            ->map(fn ($bt) => [
-                'blok_tpu_id' => $bt->id,
-                'blok_id'     => $bt->blok_id,
-                'nama'        => optional($bt->blok)->nama,
-                'nomor'       => optional($bt->blok)->nomor,
-            ]);
-
         $makamList = \App\Models\Makam::select('makam.id', 'makam.nama_nisan')
             ->selectRaw('ST_Y(makam.geom) as lat, ST_X(makam.geom) as lng')
-            ->join('blok_tpu', 'makam.blok_tpu_id', '=', 'blok_tpu.id')
-            ->where('blok_tpu.tpu_id', $tpu->id)
+            ->where('makam.tpu_id', $tpu->id)
             ->whereNotNull('makam.geom')
             ->get();
+
+        $penjualList = \App\Models\PenjualBunga::select('id', 'nama_toko', 'alamat', 'no_hp')
+            ->selectRaw('ST_Y(geom) as lat, ST_X(geom) as lng')
+            ->whereRaw('ST_Within(geom, (SELECT geom FROM tpu WHERE id = ?))', [$tpu->id])
+            ->whereNotNull('geom')
+            ->get()
+            ->map(fn($item) => [
+                'id' => $item->id,
+                'nama_toko' => $item->nama_toko,
+                'alamat' => $item->alamat,
+                'no_hp' => $item->no_hp,
+                'lat' => (float) $item->lat,
+                'lng' => (float) $item->lng,
+            ]);
 
         return Inertia::render('tpu/Show', [
             'tpu'       => [
                 'id'         => $tpuData->id,
                 'nama'       => $tpuData->nama,
                 'alamat'     => $tpuData->alamat,
+                'sisa_lahan_m2' => $tpuData->sisa_lahan_m2,
                 'polygon'    => $polygonCoords,
                 'created_at' => $tpuData->created_at,
             ],
-            'blok_list'  => $blokList,
-            'makam_list' => $makamList,
-            'auth'       => ['user' => Auth::user()->only('name', 'email', 'role')],
+            'makam_list'    => $makamList,
+            'penjual_list'  => $penjualList,
+            'auth'          => ['user' => Auth::user()->only('name', 'email', 'role')],
         ]);
     }
 
     public function edit(Tpu $tpu)
     {
-        $tpuData = Tpu::select('id', 'nama', 'alamat')
+        $tpuData = Tpu::select('id', 'nama', 'alamat', 'sisa_lahan_m2')
             ->selectRaw('ST_AsGeoJSON(geom) as geom_json')
             ->findOrFail($tpu->id);
 
@@ -172,20 +181,35 @@ class TpuController extends Controller
 
         $makamList = \App\Models\Makam::select('makam.id', 'makam.nama_nisan')
             ->selectRaw('ST_Y(makam.geom) as lat, ST_X(makam.geom) as lng')
-            ->join('blok_tpu', 'makam.blok_tpu_id', '=', 'blok_tpu.id')
-            ->where('blok_tpu.tpu_id', $tpu->id)
+            ->where('makam.tpu_id', $tpu->id)
             ->whereNotNull('makam.geom')
             ->get();
+
+        $penjualList = \App\Models\PenjualBunga::select('id', 'nama_toko', 'alamat', 'no_hp')
+            ->selectRaw('ST_Y(geom) as lat, ST_X(geom) as lng')
+            ->whereRaw('ST_Within(geom, (SELECT geom FROM tpu WHERE id = ?))', [$tpu->id])
+            ->whereNotNull('geom')
+            ->get()
+            ->map(fn($item) => [
+                'id' => $item->id,
+                'nama_toko' => $item->nama_toko,
+                'alamat' => $item->alamat,
+                'no_hp' => $item->no_hp,
+                'lat' => (float) $item->lat,
+                'lng' => (float) $item->lng,
+            ]);
 
         return Inertia::render('tpu/Form', [
             'tpu'  => [
                 'id'      => $tpuData->id,
                 'nama'    => $tpuData->nama,
                 'alamat'  => $tpuData->alamat,
+                'sisa_lahan_m2' => $tpuData->sisa_lahan_m2,
                 'polygon' => $polygonCoords,
             ],
-            'makam_list' => $makamList,
-            'auth'       => ['user' => Auth::user()->only('name', 'email', 'role')],
+            'makam_list'    => $makamList,
+            'penjual_list'  => $penjualList,
+            'auth'          => ['user' => Auth::user()->only('name', 'email', 'role')],
         ]);
     }
 
@@ -194,9 +218,17 @@ class TpuController extends Controller
         $request->validate([
             'nama'         => 'required|string|max:64',
             'alamat'       => 'nullable|string|max:1000',
+            'sisa_lahan_m2'=> 'nullable|numeric|min:0',
             'polygon'      => 'required|array|min:3',
             'polygon.*.lat' => 'required|numeric|between:-90,90',
             'polygon.*.lng' => 'required|numeric|between:-180,180',
+            'penjual_bunga' => 'nullable|array',
+            'penjual_bunga.*.id'        => 'nullable|integer|exists:penjual_bunga,id',
+            'penjual_bunga.*.nama_toko' => 'required|string|max:100',
+            'penjual_bunga.*.alamat'    => 'nullable|string|max:1000',
+            'penjual_bunga.*.no_hp'     => 'nullable|string|max:20',
+            'penjual_bunga.*.lat'       => 'required|numeric|between:-90,90',
+            'penjual_bunga.*.lng'       => 'required|numeric|between:-180,180',
         ]);
 
         $polygon = $request->input('polygon');
@@ -211,15 +243,58 @@ class TpuController extends Controller
         $wktString = "POLYGON((" . implode(',', $wktCoords) . "))";
 
         DB::transaction(function () use ($request, $tpu, $wktString) {
+            // Ambil geom lama sebelum di-update untuk sinkronisasi penjual bunga
+            $oldGeom = DB::table('tpu')->where('id', $tpu->id)->value('geom');
+
             $tpu->update([
                 'nama'   => $request->nama,
                 'alamat' => $request->alamat,
+                'sisa_lahan_m2' => $request->sisa_lahan_m2,
             ]);
 
             DB::update(
                 "UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?",
                 [$wktString, $tpu->id]
             );
+
+            // Sync Penjual Bunga
+            $inputSellers = $request->input('penjual_bunga', []);
+            $inputIds = collect($inputSellers)->pluck('id')->filter()->toArray();
+
+            // Hapus penjual bunga lama yang secara spasial ada di dalam oldGeom TPU tetapi ID-nya tidak ada dalam payload update
+            if ($oldGeom) {
+                PenjualBunga::whereRaw('ST_Within(geom, ?)', [$oldGeom])
+                    ->whereNotIn('id', $inputIds)
+                    ->delete();
+            }
+
+            // Update/Create penjual bunga dari payload
+            foreach ($inputSellers as $pb) {
+                if (!empty($pb['id'])) {
+                    $seller = PenjualBunga::find($pb['id']);
+                    if ($seller) {
+                        $seller->update([
+                            'nama_toko' => $pb['nama_toko'],
+                            'alamat'    => $pb['alamat'] ?? null,
+                            'no_hp'     => $pb['no_hp'] ?? null,
+                        ]);
+                        DB::update(
+                            "UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                            [$pb['lng'], $pb['lat'], $seller->id]
+                        );
+                    }
+                } else {
+                    $seller = PenjualBunga::create([
+                        'nama_toko' => $pb['nama_toko'],
+                        'alamat'    => $pb['alamat'] ?? null,
+                        'no_hp'     => $pb['no_hp'] ?? null,
+                    ]);
+                    DB::update(
+                        "UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(?, ?), 4326) WHERE id = ?",
+                        [$pb['lng'], $pb['lat'], $seller->id]
+                    );
+                }
+            }
         });
 
         return redirect()->route('tpu.show', $tpu->id)
@@ -232,67 +307,6 @@ class TpuController extends Controller
 
         return redirect()->route('tpu.index')
             ->with('success', 'TPU berhasil dihapus.');
-    }
-
-    // ── Blok nested routes ───────────────────────────────────────
-
-    public function storeBlok(Request $request, Tpu $tpu)
-    {
-        $request->validate([
-            'nama'  => 'nullable|string|max:64',
-            'nomor' => 'nullable|integer',
-        ]);
-
-        DB::transaction(function () use ($request, $tpu) {
-            $blok = Blok::create([
-                'nama'  => $request->nama,
-                'nomor' => $request->nomor,
-            ]);
-
-            BlokTpu::create([
-                'blok_id' => $blok->id,
-                'tpu_id'  => $tpu->id,
-            ]);
-        });
-
-        return redirect()->route('tpu.show', $tpu->id)
-            ->with('success', 'Blok berhasil ditambahkan.');
-    }
-
-    public function updateBlok(Request $request, Tpu $tpu, BlokTpu $blok)
-    {
-        abort_if($blok->tpu_id !== $tpu->id, 404);
-
-        $request->validate([
-            'nama'  => 'nullable|string|max:64',
-            'nomor' => 'nullable|integer',
-        ]);
-
-        if ($blok->blok_id) {
-            Blok::where('id', $blok->blok_id)->update([
-                'nama'  => $request->nama,
-                'nomor' => $request->nomor,
-            ]);
-        }
-
-        return redirect()->route('tpu.show', $tpu->id)
-            ->with('success', 'Blok berhasil diperbarui.');
-    }
-
-    public function destroyBlok(Tpu $tpu, BlokTpu $blok)
-    {
-        abort_if($blok->tpu_id !== $tpu->id, 404);
-
-        DB::transaction(function () use ($blok) {
-            $blokId = $blok->blok_id;
-            $blok->delete();
-            if ($blokId) {
-                Blok::destroy($blokId);
-            }
-        });
-
-        return redirect()->route('tpu.show', $tpu->id)
-            ->with('success', 'Blok berhasil dihapus.');
     }
 
     // ── Helpers ─────────────────────────────────────────────────

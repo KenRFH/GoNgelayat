@@ -14,11 +14,11 @@ return new class extends Migration
     {
         Schema::create('jalur', function (Blueprint $table) {
             $table->increments('id');
-            $table->unsignedInteger('blok_tpu_id')->nullable();
+            $table->unsignedInteger('tpu_id')->nullable();
             $table->string('nama', 64)->nullable();
             $table->timestamps();
 
-            $table->foreign('blok_tpu_id')->references('id')->on('blok_tpu')->nullOnDelete();
+            $table->foreign('tpu_id')->references('id')->on('tpu')->nullOnDelete();
         });
 
         // Add PostGIS geometry column (LINESTRING, SRID 4326)

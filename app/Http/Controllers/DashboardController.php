@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BlokTpu;
 use App\Models\Makam;
 use App\Models\Tpu;
 use App\Models\User;
@@ -18,12 +17,11 @@ class DashboardController extends Controller
         if ($user->role === 'superadmin') {
             $stats = [
                 'total_tpu'   => Tpu::count(),
-                'total_blok'  => BlokTpu::count(),
                 'total_admin' => User::where('role', 'admin')->count(),
                 'total_makam' => Makam::count(), 
             ];
 
-            $recent = Tpu::withCount('blokTpu')
+            $recent = Tpu::withCount('makam')
                 ->orderBy('created_at', 'desc')
                 ->limit(5)
                 ->get(['id', 'nama', 'alamat', 'created_at'])
@@ -31,7 +29,7 @@ class DashboardController extends Controller
                     'id'             => $t->id,
                     'nama'           => $t->nama,
                     'alamat'         => $t->alamat,
-                    'blok_tpu_count' => $t->blok_tpu_count,
+                    'makam_count'    => $t->makam_count,
                     'created_at'     => $t->created_at?->format('Y-m-d'),
                 ]);
 
@@ -46,18 +44,17 @@ class DashboardController extends Controller
         // Admin: fokus ke makam
         $stats = [
             'total_makam'  => Makam::count(),
-            'total_blok'   => BlokTpu::count(),
             'total_tpu'    => Tpu::count(),
         ];
 
-        $recent = Makam::with('blokTpu.tpu')
+        $recent = Makam::with('tpu')
             ->orderBy('created_at', 'desc')
             ->limit(5)
             ->get()
             ->map(fn ($m) => [
                 'id'            => $m->id,
                 'nama_nisan'    => $m->nama_nisan,
-                'tpu_nama'      => optional(optional($m->blokTpu)->tpu)->nama,
+                'tpu_nama'      => optional($m->tpu)->nama,
                 'tanggal_wafat' => $m->tanggal_wafat?->format('Y-m-d'),
                 'created_at'    => $m->created_at?->format('Y-m-d'),
             ]);

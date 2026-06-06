@@ -9,7 +9,7 @@ class Makam extends Model
     protected $table = 'makam';
 
     protected $fillable = [
-        'blok_tpu_id',
+        'tpu_id',
         'user_id',
         'nama_nisan',
         'tanggal_lahir',
@@ -23,8 +23,8 @@ class Makam extends Model
         'tanggal_wafat' => 'date',
     ];
 
-    public function blokTpu()
+    public function tpu()
     {
-        return $this->belongsTo(BlokTpu::class, 'blok_tpu_id');
+        return $this->belongsTo(Tpu::class, 'tpu_id');
     }
 }

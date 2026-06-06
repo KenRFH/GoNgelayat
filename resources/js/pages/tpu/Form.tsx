@@ -12,13 +12,8 @@ interface TpuData {
     id?: number;
     nama: string;
     alamat: string;
+    sisa_lahan_m2?: number | string | null;
     polygon?: Coordinate[];
-}
-
-interface BlokEntry {
-    key: number;
-    nama: string;
-    nomor: string;
 }
 
 interface Grave {
@@ -28,52 +23,106 @@ interface Grave {
     lng: number | null;
 }
 
+interface FlowerSeller {
+    id?: number;
+    nama_toko: string;
+    alamat?: string | null;
+    no_hp?: string | null;
+    lat: number | null;
+    lng: number | null;
+    key?: number;
+}
+
 interface Props {
     tpu: TpuData | null;
     makam_list?: Grave[];
+    penjual_list?: FlowerSeller[];
 }
 
-let blokKeyCounter = 0;
+let sellerKeyCounter = 0;
 
-export default function TpuForm({ tpu, makam_list = [] }: Props) {
+export default function TpuForm({ tpu, makam_list = [], penjual_list = [] }: Props) {
     const isEdit = !!tpu?.id;
 
+    const initialSellers = (penjual_list ?? []).map(p => ({
+        ...p,
+        key: p.id ? p.id : ++sellerKeyCounter
+    }));
+
     const { data, setData, put, processing, errors } = useForm({
-        nama:    tpu?.nama    ?? '',
-        alamat:  tpu?.alamat  ?? '',
+        nama: tpu?.nama ?? '',
+        alamat: tpu?.alamat ?? '',
+        sisa_lahan_m2: tpu?.sisa_lahan_m2 ?? '',
         polygon: tpu?.polygon ?? [] as Coordinate[],
+        penjual_bunga: initialSellers as FlowerSeller[],
     });
 
-    const [blokRows, setBlokRows] = useState<BlokEntry[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    const [pinningSellerIndex, setPinningSellerIndex] = useState<number | null>(null);
 
-    function addBlokRow() {
-        setBlokRows(prev => [...prev, { key: ++blokKeyCounter, nama: '', nomor: '' }]);
+    function addFlowerSeller() {
+        const newSeller: FlowerSeller = {
+            key: ++sellerKeyCounter,
+            nama_toko: '',
+            alamat: '',
+            no_hp: '',
+            lat: null,
+            lng: null,
+        };
+        setData('penjual_bunga', [...data.penjual_bunga, newSeller]);
     }
 
-    function removeBlokRow(key: number) {
-        setBlokRows(prev => prev.filter(b => b.key !== key));
+    function removeFlowerSeller(index: number) {
+        if (pinningSellerIndex === index) {
+            setPinningSellerIndex(null);
+        }
+        const updated = data.penjual_bunga.filter((_, idx) => idx !== index);
+        setData('penjual_bunga', updated);
     }
 
-    function updateBlokField(key: number, field: 'nama' | 'nomor', value: string) {
-        setBlokRows(prev => prev.map(b => b.key === key ? { ...b, [field]: value } : b));
+    function updateSellerField(index: number, field: keyof FlowerSeller, value: any) {
+        const updated = data.penjual_bunga.map((pb, idx) => 
+            idx === index ? { ...pb, [field]: value } : pb
+        );
+        setData('penjual_bunga', updated);
+    }
+
+    function handleMapClick(lat: number, lng: number) {
+        if (pinningSellerIndex !== null) {
+            const updated = data.penjual_bunga.map((pb, idx) => 
+                idx === pinningSellerIndex ? { ...pb, lat, lng } : pb
+            );
+            setData('penjual_bunga', updated);
+            setPinningSellerIndex(null);
+        }
     }
 
     function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
+        // Bersihkan data penjual bunga: filter yang koordinatnya lengkap
+        const validSellers = data.penjual_bunga.filter(pb => pb.lat !== null && pb.lng !== null);
+
         if (isEdit) {
-            // Inertia put otomatis mengirimkan seluruh field di useForm (nama, alamat, polygon)
-            put(`/tpu/${tpu!.id}`);
+            // Kita pass data penjual_bunga yang valid saja ke payload update
+            const payload = {
+                nama:          data.nama,
+                alamat:        data.alamat,
+                sisa_lahan_m2: data.sisa_lahan_m2,
+                polygon:       data.polygon,
+                penjual_bunga: validSellers,
+            };
+            setSubmitting(true);
+            router.put(`/tpu/${tpu!.id}`, payload as any, {
+                onFinish: () => setSubmitting(false),
+            });
         } else {
             const payload = {
-                nama:    data.nama,
-                alamat:  data.alamat,
-                polygon: data.polygon,
-                blok:    blokRows.map(b => ({
-                    nama:  b.nama  || null,
-                    nomor: b.nomor ? Number(b.nomor) : null,
-                })),
+                nama:          data.nama,
+                alamat:        data.alamat,
+                sisa_lahan_m2: data.sisa_lahan_m2,
+                polygon:       data.polygon,
+                penjual_bunga: validSellers,
             };
             setSubmitting(true);
             router.post('/tpu', payload as any, {
@@ -86,7 +135,7 @@ export default function TpuForm({ tpu, makam_list = [] }: Props) {
         <AdminLayout title={isEdit ? 'Edit TPU' : 'Tambah TPU'}>
             <Head title={`${isEdit ? 'Edit' : 'Tambah'} TPU — GoNgelayat`} />
 
-            <div style={{ maxWidth: '640px' }}>
+            <div style={{ maxWidth: '100%' }}>
                 <div className="section-header fade-in">
                     <h2 className="section-title">
                         {isEdit ? `Edit TPU: ${tpu!.nama}` : 'Tambah TPU Baru'}
@@ -103,20 +152,35 @@ export default function TpuForm({ tpu, makam_list = [] }: Props) {
                             Informasi TPU
                         </div>
 
-                        <div className="form-group">
-                            <label htmlFor="tpu-nama" className="form-label">
-                                Nama TPU <span style={{ color: '#dc2626' }}>*</span>
-                            </label>
-                            <input
-                                id="tpu-nama"
-                                type="text"
-                                className={`form-input ${errors.nama ? 'error' : ''}`}
-                                value={data.nama}
-                                onChange={e => setData('nama', e.target.value)}
-                                placeholder="cth. TPU Umum Karet"
-                                maxLength={64}
-                            />
-                            {errors.nama && <span className="form-error">{errors.nama}</span>}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                            <div>
+                                <label className="form-label">
+                                    Nama TPU <span style={{ color: '#ef4444' }}>*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    className={`form-input ${errors.nama ? 'border-red-500' : ''}`}
+                                    value={data.nama}
+                                    onChange={e => setData('nama', e.target.value)}
+                                    placeholder="Contoh: TPU Jeruk Purut"
+                                />
+                                {errors.nama && <span className="form-error">{errors.nama}</span>}
+                            </div>
+                            <div>
+                                <label className="form-label">
+                                    Sisa Lahan (m²)
+                                </label>
+                                <input
+                                    type="number"
+                                    className={`form-input ${errors.sisa_lahan_m2 ? 'border-red-500' : ''}`}
+                                    value={data.sisa_lahan_m2 || ''}
+                                    onChange={e => setData('sisa_lahan_m2', e.target.value)}
+                                    placeholder="Contoh: 1500"
+                                    min="0"
+                                    step="any"
+                                />
+                                {errors.sisa_lahan_m2 && <span className="form-error">{errors.sisa_lahan_m2}</span>}
+                            </div>
                         </div>
 
                         <div className="form-group" style={{ marginBottom: 0 }}>
@@ -158,95 +222,93 @@ export default function TpuForm({ tpu, makam_list = [] }: Props) {
 
                         {errors.polygon && <div className="alert-error" style={{ marginBottom: '0.75rem' }}>{errors.polygon}</div>}
 
+                        {pinningSellerIndex !== null && (
+                            <div style={{
+                                marginBottom: '0.75rem',
+                                padding: '0.625rem 0.875rem',
+                                background: '#eff6ff',
+                                border: '1px solid #bfdbfe',
+                                borderRadius: '0.5rem',
+                                color: '#1e40af',
+                                fontSize: '0.78rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                fontWeight: 500
+                            }}>
+                                <span>
+                                    Mode Pin: Klik pada peta di bawah untuk meletakkan lokasi toko <strong>{data.penjual_bunga[pinningSellerIndex]?.nama_toko || `Penjual Bunga #${pinningSellerIndex + 1}`}</strong>.
+                                </span>
+                            </div>
+                        )}
+
                         <TpuPolygonMap
                             initialPolygon={data.polygon}
                             onPolygonChange={(polygonCoords) => setData('polygon', polygonCoords)}
                             graves={makam_list}
+                            flowerSellers={data.penjual_bunga}
+                            onFlowerSellersChange={(updated) => setData('penjual_bunga', updated)}
+                            onMapClick={handleMapClick}
                         />
                     </div>
 
-                    {/* ── Blok (hanya saat create) ── */}
-                    {!isEdit && (
-                        <div className="card fade-in stagger-2" style={{ marginBottom: '1.5rem' }}>
-                            <div style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                marginBottom: blokRows.length > 0 ? '1rem' : 0,
-                                paddingBottom: blokRows.length > 0 ? '0.625rem' : 0,
-                                borderBottom: blokRows.length > 0 ? '1px solid #f0f0f0' : 'none',
-                            }}>
-                                <div>
-                                    <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Blok dalam TPU ini</div>
-                                    <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.1rem' }}>
-                                        Opsional — bisa ditambahkan setelah TPU dibuat
-                                    </div>
+                    {/* ── Penjual Bunga di Sekitar TPU ── */}
+                    <div className="card fade-in stagger-2" style={{ marginBottom: '1.5rem' }}>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            marginBottom: data.penjual_bunga.length > 0 ? '1rem' : 0,
+                            paddingBottom: data.penjual_bunga.length > 0 ? '0.625rem' : 0,
+                            borderBottom: data.penjual_bunga.length > 0 ? '1px solid #f0f0f0' : 'none',
+                        }}>
+                            <div>
+                                <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>Penjual Bunga Sekitar TPU</div>
+                                <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.1rem' }}>
+                                    Letakkan pin toko bunga di dekat TPU pada peta.
                                 </div>
-                                <button type="button" className="btn btn-secondary btn-sm"
-                                    onClick={addBlokRow} id="btn-tambah-blok-form">
-                                    + Tambah Blok
-                                </button>
                             </div>
+                            <button type="button" className="btn btn-secondary btn-sm"
+                                onClick={addFlowerSeller} id="btn-tambah-penjual-form">
+                                + Tambah Penjual
+                            </button>
+                        </div>
 
-                            {blokRows.length === 0 ? (
-                                <div style={{
-                                    textAlign: 'center', padding: '1.25rem',
-                                    border: '2px dashed #e5e7eb', borderRadius: '0.625rem',
-                                    fontSize: '0.82rem', color: '#9ca3af',
-                                }}>
-                                    Belum ada blok. Klik <strong>+ Tambah Blok</strong> untuk menambahkan.
-                                </div>
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    {blokRows.map((b, i) => (
-                                        <div key={b.key} style={{
-                                            display: 'flex', alignItems: 'center', gap: '0.625rem',
-                                            padding: '0.5rem 0.75rem',
-                                            background: '#f9f9f9', borderRadius: '0.5rem',
-                                            border: '1px solid #f0f0f0',
-                                        }}>
-                                            {/* Nomor urut */}
+                        {data.penjual_bunga.length === 0 ? (
+                            <div style={{
+                                textAlign: 'center', padding: '1.25rem',
+                                border: '2px dashed #e5e7eb', borderRadius: '0.625rem',
+                                fontSize: '0.82rem', color: '#9ca3af',
+                            }}>
+                                Belum ada penjual bunga. Klik <strong>+ Tambah Penjual</strong> untuk menambahkan.
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                {data.penjual_bunga.map((pb, i) => (
+                                    <div key={pb.key} style={{
+                                        display: 'flex', flexDirection: 'column', gap: '0.625rem',
+                                        padding: '0.75rem 1rem',
+                                        background: '#f9f9f9', borderRadius: '0.5rem',
+                                        border: '1px solid #f0f0f0',
+                                        position: 'relative'
+                                    }}>
+                                        {/* Header Baris */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                             <span style={{
                                                 display: 'inline-flex', alignItems: 'center',
                                                 justifyContent: 'center',
-                                                width: '24px', height: '24px', flexShrink: 0,
+                                                width: '24px', height: '24px',
                                                 background: '#0a0a0a', color: '#fff',
                                                 borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
                                             }}>
                                                 {i + 1}
                                             </span>
-
-                                            {/* Nama blok */}
-                                            <input
-                                                id={`blok-${b.key}-nama`}
-                                                type="text"
-                                                className="form-input"
-                                                value={b.nama}
-                                                onChange={e => updateBlokField(b.key, 'nama', e.target.value)}
-                                                placeholder="Nama blok (cth. Blok A)"
-                                                maxLength={64}
-                                                style={{ flex: 1, fontSize: '0.82rem', padding: '0.35rem 0.6rem' }}
-                                            />
-
-                                            {/* Nomor blok */}
-                                            <input
-                                                id={`blok-${b.key}-nomor`}
-                                                type="number"
-                                                className="form-input"
-                                                value={b.nomor}
-                                                onChange={e => updateBlokField(b.key, 'nomor', e.target.value)}
-                                                placeholder="No."
-                                                min={1}
-                                                style={{ width: '70px', fontSize: '0.82rem', padding: '0.35rem 0.6rem' }}
-                                            />
-
-                                            {/* Hapus */}
                                             <button
                                                 type="button"
-                                                onClick={() => removeBlokRow(b.key)}
+                                                onClick={() => removeFlowerSeller(i)}
                                                 style={{ background: 'none', border: 'none', cursor: 'pointer',
-                                                    padding: '0.25rem', color: '#9ca3af', flexShrink: 0 }}
+                                                    padding: '0.25rem', color: '#9ca3af' }}
                                                 onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
                                                 onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
-                                                aria-label="Hapus blok"
+                                                aria-label="Hapus penjual bunga"
                                             >
                                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
                                                     stroke="currentColor" strokeWidth="2">
@@ -255,14 +317,73 @@ export default function TpuForm({ tpu, makam_list = [] }: Props) {
                                                 </svg>
                                             </button>
                                         </div>
-                                    ))}
-                                    <div style={{ fontSize: '0.75rem', color: '#6b7280', textAlign: 'right', marginTop: '0.1rem' }}>
-                                        {blokRows.length} blok akan dibuat
+
+                                        {/* Form fields */}
+                                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                            <div style={{ flex: 1, minWidth: '150px' }}>
+                                                <input
+                                                    type="text"
+                                                    className="form-input"
+                                                    value={pb.nama_toko}
+                                                    onChange={e => updateSellerField(i, 'nama_toko', e.target.value)}
+                                                    placeholder="Nama Toko Bunga"
+                                                    maxLength={100}
+                                                    style={{ fontSize: '0.82rem', padding: '0.35rem 0.6rem' }}
+                                                />
+                                                {errors[`penjual_bunga.${i}.nama_toko` as any] && (
+                                                    <span className="form-error" style={{ display: 'block', marginTop: '0.25rem' }}>
+                                                        {errors[`penjual_bunga.${i}.nama_toko` as any]}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div style={{ width: '130px' }}>
+                                                <input
+                                                    type="text"
+                                                    className="form-input"
+                                                    value={pb.no_hp ?? ''}
+                                                    onChange={e => updateSellerField(i, 'no_hp', e.target.value)}
+                                                    placeholder="No. HP"
+                                                    maxLength={20}
+                                                    style={{ fontSize: '0.82rem', padding: '0.35rem 0.6rem' }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <input
+                                                type="text"
+                                                className="form-input"
+                                                value={pb.alamat ?? ''}
+                                                onChange={e => updateSellerField(i, 'alamat', e.target.value)}
+                                                placeholder="Alamat Toko Bunga"
+                                                maxLength={1000}
+                                                style={{ fontSize: '0.82rem', padding: '0.35rem 0.6rem' }}
+                                            />
+                                        </div>
+
+                                        {/* Koordinat */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.25rem' }}>
+                                            <div style={{ fontSize: '0.72rem', color: pb.lat && pb.lng ? '#16a34a' : '#ef4444', fontWeight: 500 }}>
+                                                {pb.lat && pb.lng 
+                                                    ? `Lat: ${pb.lat.toFixed(6)}, Lng: ${pb.lng.toFixed(6)}` 
+                                                    : ' Lokasi belum ditentukan di peta'
+                                                }
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className={`btn ${pinningSellerIndex === i ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                                                onClick={() => setPinningSellerIndex(pinningSellerIndex === i ? null : i)}
+                                                style={{ fontSize: '0.72rem', padding: '0.25rem 0.5rem' }}
+                                            >
+                                                {pinningSellerIndex === i ? 'Menunggu Klik...' : 'Pilih di Peta'}
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
                     {/* Actions */}
                     <div className="fade-in stagger-3" style={{ display: 'flex', gap: '0.5rem' }}>
@@ -279,7 +400,7 @@ export default function TpuForm({ tpu, makam_list = [] }: Props) {
                                 </>
                             ) : isEdit
                                 ? 'Perbarui TPU'
-                                : `Simpan TPU${blokRows.length > 0 ? ` + ${blokRows.length} Blok` : ''}`
+                                : 'Simpan TPU'
                             }
                         </button>
                         <Link href="/tpu" className="btn btn-secondary">Batal</Link>

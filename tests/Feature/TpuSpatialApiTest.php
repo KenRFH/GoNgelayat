@@ -212,4 +212,197 @@ class TpuSpatialApiTest extends TestCase
         $this->assertNotNull($tpuDekatRecord);
         $this->assertLessThan(200, $tpuDekatRecord['jarak_meter']);
     }
+
+
+
+    /**
+     * Test finding graves located within TPU boundary using ST_Within.
+     */
+    public function test_can_get_graves_within_tpu_boundary(): void
+    {
+        // 1. Create a TPU with a polygon in Jakarta
+        $tpu = Tpu::create([
+            'nama' => 'TPU Within Test Jakarta',
+            'alamat' => 'Jl. Within Jakarta',
+        ]);
+        $wkt = "POLYGON((106.8000 -6.2000, 106.8100 -6.2000, 106.8100 -6.2100, 106.8000 -6.2100, 106.8000 -6.2000))";
+        DB::statement("UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?", [$wkt, $tpu->id]);
+
+        // 2. Create Grave A (inside: -6.2050, 106.8050)
+        $makamInside = \App\Models\Makam::create([
+            'nama_nisan' => 'Makam Dalam Batas Jakarta',
+            'tpu_id' => $tpu->id,
+        ]);
+        DB::statement('UPDATE makam SET geom = ST_SetSRID(ST_MakePoint(106.8050, -6.2050), 4326) WHERE id = ?', [$makamInside->id]);
+
+        // 3. Create Grave B (outside: -6.2200, 106.8200)
+        $makamOutside = \App\Models\Makam::create([
+            'nama_nisan' => 'Makam Luar Batas Jakarta',
+            'tpu_id' => $tpu->id,
+        ]);
+        DB::statement('UPDATE makam SET geom = ST_SetSRID(ST_MakePoint(106.8200, -6.2200), 4326) WHERE id = ?', [$makamOutside->id]);
+
+        // 4. Call the API
+        $response = $this->getJson(route('api.tpu.makam_dalam_batas', $tpu->id));
+
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'success');
+
+        $data = $response->json('data');
+        $names = collect($data)->pluck('nama_nisan')->toArray();
+
+        $this->assertContains('Makam Dalam Batas Jakarta', $names);
+        $this->assertNotContains('Makam Luar Batas Jakarta', $names);
+    }
+
+    /**
+     * Test TPU detail includes area in m2 using ST_Area.
+     */
+    public function test_tpu_detail_includes_area_m2(): void
+    {
+        $tpu = Tpu::create([
+            'nama' => 'TPU Area Test',
+            'alamat' => 'Jl. Area',
+        ]);
+        // Roughly 100m x 100m polygon = ~10000 m2
+        $wkt = "POLYGON((113.7150 -8.1680, 113.7160 -8.1680, 113.7160 -8.1690, 113.7150 -8.1690, 113.7150 -8.1680))";
+        DB::statement("UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?", [$wkt, $tpu->id]);
+
+        $response = $this->getJson(route('api.tpu.show', $tpu->id));
+
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'success')
+            ->assertJsonStructure([
+                'status',
+                'data' => ['id', 'nama', 'geom', 'luas_m2']
+            ]);
+
+        $luas = $response->json('data.luas_m2');
+        $this->assertGreaterThan(5000, $luas);
+        $this->assertLessThan(20000, $luas);
+    }
+
+
+
+    /**
+     * Test storing a TPU with flower sellers.
+     */
+    public function test_can_store_tpu_with_flower_sellers(): void
+    {
+        $payload = [
+            'nama' => 'TPU Sumbersari Indah',
+            'alamat' => 'Jl. Kalimantan No. 37, Jember',
+            'polygon' => [
+                ['lat' => -8.1681, 'lng' => 113.7151],
+                ['lat' => -8.1682, 'lng' => 113.7155],
+                ['lat' => -8.1685, 'lng' => 113.7157],
+            ],
+            'penjual_bunga' => [
+                [
+                    'nama_toko' => 'Toko Bunga Makmur',
+                    'alamat' => 'Depan TPU',
+                    'no_hp' => '081234567890',
+                    'lat' => -8.1683,
+                    'lng' => 113.7153
+                ]
+            ]
+        ];
+
+        $response = $this->postJson(route('api.tpu.store'), $payload);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('status', 'success');
+
+        // Pastikan penjual bunga tersimpan
+        $this->assertDatabaseHas('penjual_bunga', [
+            'nama_toko' => 'Toko Bunga Makmur',
+            'alamat' => 'Depan TPU',
+            'no_hp' => '081234567890',
+        ]);
+
+        $seller = \App\Models\PenjualBunga::where('nama_toko', 'Toko Bunga Makmur')->first();
+        $this->assertNotNull($seller);
+        
+        $dbGeom = DB::selectOne("SELECT ST_AsText(geom) as wkt FROM penjual_bunga WHERE id = ?", [$seller->id]);
+        $this->assertStringContainsString('POINT(113.7153 -8.1683)', $dbGeom->wkt);
+    }
+
+    /**
+     * Test updating/syncing flower sellers on a TPU.
+     */
+    public function test_can_update_tpu_with_flower_sellers(): void
+    {
+        // 1. Buat TPU
+        $tpu = Tpu::create([
+            'nama' => 'TPU Sync Test',
+            'alamat' => 'Jl. Sync',
+        ]);
+        $wkt = "POLYGON((113.7150 -8.1680, 113.7160 -8.1680, 113.7160 -8.1690, 113.7150 -8.1690, 113.7150 -8.1680))";
+        DB::statement("UPDATE tpu SET geom = ST_SetSRID(ST_GeomFromText(?), 4326) WHERE id = ?", [$wkt, $tpu->id]);
+
+        // 2. Buat penjual bunga A (di dalam TPU, akan di-update)
+        $sellerA = \App\Models\PenjualBunga::create([
+            'nama_toko' => 'Toko A',
+            'alamat' => 'Alamat A',
+        ]);
+        DB::statement("UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(113.7152, -8.1682), 4326) WHERE id = ?", [$sellerA->id]);
+
+        // Buat penjual bunga B (di dalam TPU, akan di-delete karena tidak ada di payload)
+        $sellerB = \App\Models\PenjualBunga::create([
+            'nama_toko' => 'Toko B',
+            'alamat' => 'Alamat B',
+        ]);
+        DB::statement("UPDATE penjual_bunga SET geom = ST_SetSRID(ST_MakePoint(113.7155, -8.1685), 4326) WHERE id = ?", [$sellerB->id]);
+
+        // Payload update: Toko A di-update, Toko B dihapus (tidak dimasukkan), Toko C ditambahkan (baru)
+        $payload = [
+            'nama' => 'TPU Sync Test Updated',
+            'alamat' => 'Jl. Sync Baru',
+            'polygon' => [
+                ['lat' => -8.1680, 'lng' => 113.7150],
+                ['lat' => -8.1680, 'lng' => 113.7160],
+                ['lat' => -8.1690, 'lng' => 113.7160],
+            ],
+            'penjual_bunga' => [
+                [
+                    'id' => $sellerA->id,
+                    'nama_toko' => 'Toko A Updated',
+                    'alamat' => 'Alamat A Baru',
+                    'no_hp' => '081111',
+                    'lat' => -8.1683,
+                    'lng' => 113.7153
+                ],
+                [
+                    'nama_toko' => 'Toko C Baru',
+                    'alamat' => 'Alamat C',
+                    'no_hp' => '082222',
+                    'lat' => -8.1686,
+                    'lng' => 113.7156
+                ]
+            ]
+        ];
+
+        $response = $this->putJson(route('api.tpu.update', $tpu->id), $payload);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'success');
+
+        // Pastikan Toko A ter-update
+        $this->assertDatabaseHas('penjual_bunga', [
+            'id' => $sellerA->id,
+            'nama_toko' => 'Toko A Updated',
+            'alamat' => 'Alamat A Baru',
+        ]);
+
+        // Pastikan Toko B terhapus (karena berada di dalam oldGeom TPU dan tidak masuk input payload)
+        $this->assertDatabaseMissing('penjual_bunga', [
+            'id' => $sellerB->id,
+        ]);
+
+        // Pastikan Toko C tersimpan
+        $this->assertDatabaseHas('penjual_bunga', [
+            'nama_toko' => 'Toko C Baru',
+            'alamat' => 'Alamat C',
+        ]);
+    }
 }

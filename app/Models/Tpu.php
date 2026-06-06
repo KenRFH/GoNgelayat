@@ -11,11 +11,12 @@ class Tpu extends Model
     protected $fillable = [
         'nama',
         'alamat',
+        'sisa_lahan_m2',
         'geom',
     ];
 
-    public function blokTpu()
+    public function makam()
     {
-        return $this->hasMany(BlokTpu::class, 'tpu_id');
+        return $this->hasMany(Makam::class, 'tpu_id');
     }
 }

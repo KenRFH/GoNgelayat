@@ -23,7 +23,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
-        'blok_tpu_id',
+        'tpu_id',
     ];
 
     /**

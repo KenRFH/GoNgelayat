@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\BlokTpuController;
+
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MakamController;
 use App\Http\Controllers\PublicController;
@@ -30,12 +30,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('tpu', TpuController::class)
         ->middleware('role:superadmin');
 
-    // Blok TPU — nested dalam TPU (superadmin only)
-    Route::prefix('tpu/{tpu}/blok')->name('tpu.blok.')->middleware('role:superadmin')->group(function () {
-        Route::post('/',           [TpuController::class, 'storeBlok'])->name('store');
-        Route::put('/{blok}',     [TpuController::class, 'updateBlok'])->name('update');
-        Route::delete('/{blok}',  [TpuController::class, 'destroyBlok'])->name('destroy');
-    });
+
 
     // Manajemen user — hanya superadmin
     Route::resource('users', UserController::class)

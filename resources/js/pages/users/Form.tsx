@@ -126,7 +126,7 @@ export default function UsersForm({ user_data }: Props) {
                             <span style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.2rem' }}>
                                 {data.role === 'superadmin'
                                     ? 'Superadmin memiliki akses penuh ke semua fitur.'
-                                    : 'Admin dapat mengelola makam dan blok TPU.'}
+                                    : 'Admin dapat mengelola makam dan data TPU.'}
                             </span>
                         </div>
 

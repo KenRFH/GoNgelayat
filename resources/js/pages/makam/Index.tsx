@@ -11,7 +11,7 @@ interface MakamItem {
     gambar: string | null;
     keterangan: string | null;
     tpu_nama: string | null;
-    blok_tpu_id: number | null;
+    tpu_id: number | null;
     created_at: string | null;
 }
 

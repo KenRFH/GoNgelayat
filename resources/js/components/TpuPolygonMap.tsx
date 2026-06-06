@@ -15,14 +15,27 @@ interface Grave {
     lng: number | null;
 }
 
+interface FlowerSeller {
+    id?: number;
+    nama_toko: string;
+    alamat?: string | null;
+    no_hp?: string | null;
+    lat: number | null;
+    lng: number | null;
+    key?: number;
+}
+
 interface TpuPolygonMapProps {
     initialPolygon?: Coordinate[];
     onPolygonChange?: (polygon: Coordinate[]) => void;
     readOnly?: boolean;
     graves?: Grave[];
+    flowerSellers?: FlowerSeller[];
+    onFlowerSellersChange?: (sellers: FlowerSeller[]) => void;
+    onMapClick?: (lat: number, lng: number) => void;
 }
 
-const DEFAULT_CENTER: [number, number] = [-8.1681, 113.7151];
+const DEFAULT_CENTER: [number, number] = [-8.1866, 113.7214];
 const DEFAULT_ZOOM = 16;
 
 export default function TpuPolygonMap({
@@ -30,6 +43,9 @@ export default function TpuPolygonMap({
     onPolygonChange,
     readOnly = false,
     graves = [],
+    flowerSellers = [],
+    onFlowerSellersChange,
+    onMapClick,
 }: TpuPolygonMapProps) {
     const mapContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -39,6 +55,23 @@ export default function TpuPolygonMap({
 
     const polygonLayerRef = useRef<any>(null);
     const gravesGroupRef = useRef<any>(null);
+    const flowerSellersGroupRef = useRef<any>(null);
+
+    const onPolygonChangeRef = useRef(onPolygonChange);
+    const onFlowerSellersChangeRef = useRef(onFlowerSellersChange);
+    const onMapClickRef = useRef(onMapClick);
+
+    useEffect(() => {
+        onPolygonChangeRef.current = onPolygonChange;
+    }, [onPolygonChange]);
+
+    useEffect(() => {
+        onFlowerSellersChangeRef.current = onFlowerSellersChange;
+    }, [onFlowerSellersChange]);
+
+    useEffect(() => {
+        onMapClickRef.current = onMapClick;
+    }, [onMapClick]);
 
     const [numVertices, setNumVertices] = useState<number>(
         initialPolygon.length
@@ -100,9 +133,17 @@ export default function TpuPolygonMap({
                  * CREATE MAP
                  * ==========================================
                  */
+                const areaBounds = L.latLngBounds(
+                    [-8.2174, 113.6836], // SouthWest (Kranjingan max selatan, Kranjingan min barat)
+                    [-8.1348, 113.7599]  // NorthEast (Antirogo min utara, Antirogo max timur)
+                );
+
                 const map = L.map(mapContainerRef.current!, {
                     zoomControl: true,
                     doubleClickZoom: !readOnly,
+                    maxBounds: areaBounds,
+                    maxBoundsViscosity: 1.0,
+                    minZoom: 13,
                 }).setView(center, DEFAULT_ZOOM);
 
                 mapRef.current = map;
@@ -119,6 +160,33 @@ export default function TpuPolygonMap({
                         maxZoom: 19,
                     }
                 ).addTo(map);
+
+                /**
+                 * ==========================================
+                 * BATAS KECAMATAN SUMBERSARI (GEOJSON)
+                 * ==========================================
+                 */
+                const getBasePath = () => {
+                    const pathname = window.location.pathname;
+                    const publicIndex = pathname.indexOf('/public');
+                    return publicIndex !== -1 ? pathname.substring(0, publicIndex + 7) : '';
+                };
+                
+                fetch(`${getBasePath()}/data/sumbersari.geojson`)
+                    .then(res => res.json())
+                    .then(data => {
+                        L.geoJSON(data, {
+                            style: {
+                                color: '#3b82f6', // Biru
+                                weight: 2.5,
+                                opacity: 0.8,
+                                fillOpacity: 0.03,
+                                dashArray: '5, 5'
+                            },
+                            interactive: false // Supaya tidak menutupi klik marker
+                        }).addTo(map);
+                    })
+                    .catch(e => console.warn('Batas kecamatan belum tersedia:', e));
 
                 /**
                  * ==========================================
@@ -218,7 +286,7 @@ export default function TpuPolygonMap({
 
                             setNumVertices(coords.length);
 
-                            onPolygonChange?.(coords);
+                            onPolygonChangeRef.current?.(coords);
                         }
                     );
 
@@ -243,7 +311,7 @@ export default function TpuPolygonMap({
 
                                 setNumVertices(coords.length);
 
-                                onPolygonChange?.(coords);
+                                onPolygonChangeRef.current?.(coords);
                             });
                         }
                     );
@@ -260,9 +328,17 @@ export default function TpuPolygonMap({
 
                             setNumVertices(0);
 
-                            onPolygonChange?.([]);
+                            onPolygonChangeRef.current?.([]);
                         }
                     );
+
+                    map.on('click', (e: any) => {
+                        onMapClickRef.current?.(e.latlng.lat, e.latlng.lng);
+                    });
+                }
+
+                if (flowerSellers && flowerSellers.length > 0) {
+                    renderFlowerSellers(flowerSellers, L);
                 }
 
                 /**
@@ -420,6 +496,78 @@ export default function TpuPolygonMap({
         });
     };
 
+    /**
+     * =========================================================
+     * SYNC FLOWER SELLERS MARKERS
+     * =========================================================
+     */
+    useEffect(() => {
+        if (!mapRef.current || !flowerSellers) return;
+
+        import('leaflet').then((L) => {
+            renderFlowerSellers(flowerSellers, L);
+        });
+    }, [flowerSellers]);
+
+    /**
+     * =========================================================
+     * RENDER FLOWER SELLERS MARKERS
+     * =========================================================
+     */
+    const renderFlowerSellers = (sellersList: FlowerSeller[], L: any) => {
+        if (!mapRef.current) return;
+
+        if (flowerSellersGroupRef.current) {
+            flowerSellersGroupRef.current.clearLayers();
+        } else {
+            flowerSellersGroupRef.current = new L.FeatureGroup();
+            mapRef.current.addLayer(flowerSellersGroupRef.current);
+        }
+
+        const flowerIcon = L.divIcon({
+            className: 'custom-flower-marker',
+            html: `<div style="font-size:24px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3))">🌸</div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        sellersList.forEach((seller, idx) => {
+            if (seller.lat && seller.lng) {
+                const marker = L.marker([seller.lat, seller.lng], {
+                    icon: flowerIcon,
+                    draggable: !readOnly
+                });
+
+                const popupContent = `
+                    <div style="font-family: inherit; padding: 4px; font-size: 0.82rem; min-width: 150px;">
+                        <div style="font-weight: 700; color: #0a0a0a; margin-bottom: 2px; display: flex; align-items: center; gap: 4px;">
+                            <span>🌸</span> ${seller.nama_toko || 'Penjual Bunga'}
+                        </div>
+                        ${seller.alamat ? `<div style="color: #4b5563; font-size: 0.75rem; margin-top: 2px;">${seller.alamat}</div>` : ''}
+                        ${seller.no_hp ? `<div style="color: #4b5563; font-size: 0.75rem; font-weight: 500;">📞 ${seller.no_hp}</div>` : ''}
+                        ${!readOnly ? `<div style="font-size: 0.65rem; color: #9ca3af; margin-top: 4px; border-top: 1px solid #f3f4f6; padding-top: 4px;">Geser marker untuk memindahkan</div>` : ''}
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+
+                if (!readOnly) {
+                    marker.on('dragend', (event: any) => {
+                        const newLatLng = event.target.getLatLng();
+                        const updated = [...sellersList];
+                        updated[idx] = {
+                            ...updated[idx],
+                            lat: newLatLng.lat,
+                            lng: newLatLng.lng
+                        };
+                        onFlowerSellersChangeRef.current?.(updated);
+                    });
+                }
+
+                flowerSellersGroupRef.current.addLayer(marker);
+            }
+        });
+    };
+
     return (
         <div
             style={{
@@ -433,8 +581,8 @@ export default function TpuPolygonMap({
                 style={{
                     width: '100%',
                     height: readOnly
-                        ? '260px'
-                        : '420px',
+                        ? '360px'
+                        : '560px',
                     borderRadius: '0.625rem',
                     border: '1px solid #e5e7eb',
                     overflow: 'hidden',

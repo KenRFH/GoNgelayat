@@ -9,13 +9,13 @@ return new class extends Migration
     /**
      * Run the migrations.
      *
-     * Adds the blok_tpu_id foreign key to the user table now that
-     * blok_tpu exists (resolves the circular dependency).
+     * Adds the tpu_id foreign key to the user table now that
+     * tpu exists (resolves the circular dependency).
      */
     public function up(): void
     {
         Schema::table('user', function (Blueprint $table) {
-            $table->foreign('blok_tpu_id')->references('id')->on('blok_tpu')->nullOnDelete();
+            $table->foreign('tpu_id')->references('id')->on('tpu')->nullOnDelete();
         });
     }
 
@@ -25,7 +25,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('user', function (Blueprint $table) {
-            $table->dropForeign(['blok_tpu_id']);
+            $table->dropForeign(['tpu_id']);
         });
     }
 };

@@ -17,13 +17,11 @@ interface TpuItem  {
         coordinates: number[][][];
     } | null;
 }
-interface BlokItem { id: number; label: string; tpu_id: number; tpu_nama: string | null; }
 
 interface MakamData {
     id?: number;
     nama_nisan: string;
-    blok_tpu_id: number | null;
-    tpu_id?: number | null;
+    tpu_id: number | null;
     tanggal_lahir: string;
     tanggal_wafat: string;
     keterangan: string;
@@ -32,10 +30,10 @@ interface MakamData {
     lng: number | null;
 }
 
-interface Props { makam: MakamData | null; tpu_list: TpuItem[]; blok_list: BlokItem[]; }
+interface Props { makam: MakamData | null; tpu_list: TpuItem[]; }
 
-// Default center: Indonesia
-const DEFAULT_CENTER: [number, number] = [-6.2, 106.816]; // Jakarta
+// Default center: Sumbersari, Jember
+const DEFAULT_CENTER: [number, number] = [-8.1866, 113.7214]; // Sumbersari
 
 // ── Location Picker Map ─────────────────────────────────────────
 function LocationPicker({
@@ -64,13 +62,46 @@ function LocationPicker({
             });
 
             const center: [number, number] = lat && lng ? [lat, lng] : DEFAULT_CENTER;
-            const map = L.map(mapRef.current!, { zoomControl: true }).setView(center, lat && lng ? 18 : 12);
+            
+            const areaBounds = L.latLngBounds(
+                [-8.2174, 113.6836], // SouthWest (Kranjingan max selatan, Kranjingan min barat)
+                [-8.1348, 113.7599]  // NorthEast (Antirogo min utara, Antirogo max timur)
+            );
+
+            const map = L.map(mapRef.current!, {
+                zoomControl: true,
+                maxBounds: areaBounds,
+                maxBoundsViscosity: 1.0,
+                minZoom: 13,
+            }).setView(center, lat && lng ? 18 : 12);
             leafletMap.current = map;
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors',
                 maxZoom: 19,
             }).addTo(map);
+
+            // Tampilkan Batas Kecamatan Sumbersari
+            const getBasePath = () => {
+                const pathname = window.location.pathname;
+                const publicIndex = pathname.indexOf('/public');
+                return publicIndex !== -1 ? pathname.substring(0, publicIndex + 7) : '';
+            };
+            
+            fetch(`${getBasePath()}/data/sumbersari.geojson`)
+                .then(res => res.json())
+                .then(data => {
+                    L.geoJSON(data, {
+                        style: {
+                            color: '#3b82f6',
+                            weight: 2.5,
+                            opacity: 0.8,
+                            fillOpacity: 0.03,
+                            dashArray: '5, 5'
+                        },
+                        interactive: false
+                    }).addTo(map);
+                }).catch(e => console.warn('Boundary error:', e));
 
             // Render TPU polygon awal jika ada
             if (tpuPolygon && tpuPolygon.length > 0) {
@@ -191,7 +222,7 @@ function LocationPicker({
             <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
             <div
                 ref={mapRef}
-                style={{ width: '100%', height: '320px', borderRadius: '0.625rem',
+                style={{ width: '100%', height: '520px', borderRadius: '0.625rem',
                     border: '1px solid #e5e7eb', overflow: 'hidden', zIndex: 1 }}
             />
             <div style={{
@@ -202,7 +233,7 @@ function LocationPicker({
                 backdropFilter: 'blur(4px)',
             }}>
                 {lat && lng
-                    ? `📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+                    ? `${lat.toFixed(6)}, ${lng.toFixed(6)}`
                     : '🖱 Klik peta untuk menandai lokasi makam'}
             </div>
         </div>
@@ -210,20 +241,37 @@ function LocationPicker({
 }
 
 // ── Component ──────────────────────────────────────────────────
-export default function MakamForm({ makam, tpu_list, blok_list }: Props) {
+export default function MakamForm({ makam, tpu_list }: Props) {
     const isEdit = !!makam?.id;
     const fileRef = useRef<HTMLInputElement>(null);
     const [preview, setPreview] = useState<string | null>(
         makam?.gambar ? `/storage/${makam.gambar}` : null
     );
 
-    // State untuk TPU yang dipilih (step 1)
-    const [selectedTpuId, setSelectedTpuId] = useState<number | null>(
-        makam?.tpu_id ?? null
-    );
+    const { data, setData, post, processing, errors } = useForm<{
+        nama_nisan: string;
+        tpu_id: number | null;
+        tanggal_lahir: string;
+        tanggal_wafat: string;
+        keterangan: string;
+        gambar: File | null;
+        lat: number | null;
+        lng: number | null;
+        _method: string;
+    }>({
+        nama_nisan:    makam?.nama_nisan    ?? '',
+        tpu_id:        makam?.tpu_id        ?? null,
+        tanggal_lahir: makam?.tanggal_lahir ?? '',
+        tanggal_wafat: makam?.tanggal_wafat ?? '',
+        keterangan:    makam?.keterangan    ?? '',
+        gambar:        null,
+        lat:           makam?.lat           ?? null,
+        lng:           makam?.lng           ?? null,
+        _method:       isEdit ? 'PUT' : 'POST',
+    });
 
-    const selectedTpu = selectedTpuId
-        ? tpu_list.find(t => t.id === selectedTpuId)
+    const selectedTpu = data.tpu_id
+        ? tpu_list.find(t => t.id === data.tpu_id)
         : null;
 
     const tpuPolygonCoords = React.useMemo(() => {
@@ -242,39 +290,6 @@ export default function MakamForm({ makam, tpu_list, blok_list }: Props) {
         return coords;
     }, [selectedTpu]);
 
-    // Blok yang difilter berdasarkan TPU terpilih
-    const filteredBlok = selectedTpuId
-        ? blok_list.filter(b => b.tpu_id === selectedTpuId)
-        : [];
-
-    const { data, setData, post, processing, errors } = useForm<{
-        nama_nisan: string;
-        blok_tpu_id: number | null;
-        tanggal_lahir: string;
-        tanggal_wafat: string;
-        keterangan: string;
-        gambar: File | null;
-        lat: number | null;
-        lng: number | null;
-        _method: string;
-    }>({
-        nama_nisan:    makam?.nama_nisan    ?? '',
-        blok_tpu_id:   makam?.blok_tpu_id  ?? null,
-        tanggal_lahir: makam?.tanggal_lahir ?? '',
-        tanggal_wafat: makam?.tanggal_wafat ?? '',
-        keterangan:    makam?.keterangan    ?? '',
-        gambar:        null,
-        lat:           makam?.lat           ?? null,
-        lng:           makam?.lng           ?? null,
-        _method:       isEdit ? 'PUT' : 'POST',
-    });
-
-    // Saat TPU berubah, reset pilihan blok
-    function handleTpuChange(tpuId: number | null) {
-        setSelectedTpuId(tpuId);
-        setData('blok_tpu_id', null);
-    }
-
     function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0] ?? null;
         setData('gambar', file);
@@ -291,7 +306,7 @@ export default function MakamForm({ makam, tpu_list, blok_list }: Props) {
         <AdminLayout title={isEdit ? 'Edit Makam' : 'Tambah Makam'}>
             <Head title={`${isEdit ? 'Edit' : 'Tambah'} Makam — GoNgelayat`} />
 
-            <div style={{ maxWidth: '680px' }}>
+            <div style={{ maxWidth: '100%' }}>
                 <div className="section-header fade-in">
                     <h2 className="section-title">
                         {isEdit ? 'Edit Data Makam' : 'Tambah Data Makam Baru'}
@@ -319,7 +334,6 @@ export default function MakamForm({ makam, tpu_list, blok_list }: Props) {
                             {errors.nama_nisan && <span className="form-error">{errors.nama_nisan}</span>}
                         </div>
 
-                        {/* ── Step 1: Pilih TPU ── */}
                         <div className="form-group">
                             <label htmlFor="makam-tpu" className="form-label">
                                 TPU
@@ -332,43 +346,16 @@ export default function MakamForm({ makam, tpu_list, blok_list }: Props) {
                                 </div>
                             ) : (
                                 <select id="makam-tpu"
-                                    className="form-input"
-                                    value={selectedTpuId ?? ''}
-                                    onChange={e => handleTpuChange(e.target.value ? Number(e.target.value) : null)}>
+                                    className={`form-input ${errors.tpu_id ? 'error' : ''}`}
+                                    value={data.tpu_id ?? ''}
+                                    onChange={e => setData('tpu_id', e.target.value ? Number(e.target.value) : null)}>
                                     <option value="">— Pilih TPU —</option>
                                     {tpu_list.map(t => (
                                         <option key={t.id} value={t.id}>{t.nama}</option>
                                     ))}
                                 </select>
                             )}
-                        </div>
-
-                        {/* ── Step 2: Pilih Blok (muncul setelah TPU dipilih) ── */}
-                        <div className="form-group" style={{
-                            overflow: 'hidden',
-                            maxHeight: selectedTpuId ? '120px' : '0px',
-                            opacity: selectedTpuId ? 1 : 0,
-                            transition: 'max-height 0.3s ease, opacity 0.25s ease',
-                            marginBottom: selectedTpuId ? undefined : 0,
-                        }}>
-                            <label htmlFor="makam-blok" className="form-label">Blok TPU</label>
-                            {filteredBlok.length === 0 ? (
-                                <div style={{ fontSize: '0.82rem', color: '#f59e0b', padding: '0.6rem',
-                                    background: '#fef3c7', borderRadius: '0.5rem' }}>
-                                    TPU ini belum memiliki blok. Tambahkan blok terlebih dahulu.
-                                </div>
-                            ) : (
-                                <select id="makam-blok"
-                                    className={`form-input ${errors.blok_tpu_id ? 'error' : ''}`}
-                                    value={data.blok_tpu_id ?? ''}
-                                    onChange={e => setData('blok_tpu_id', e.target.value ? Number(e.target.value) : null)}>
-                                    <option value="">— Pilih Blok —</option>
-                                    {filteredBlok.map(b => (
-                                        <option key={b.id} value={b.id}>{b.label}</option>
-                                    ))}
-                                </select>
-                            )}
-                            {errors.blok_tpu_id && <span className="form-error">{errors.blok_tpu_id}</span>}
+                            {errors.tpu_id && <span className="form-error">{errors.tpu_id}</span>}
                         </div>
 
                         <div className="form-group" style={{ marginBottom: 0 }}>

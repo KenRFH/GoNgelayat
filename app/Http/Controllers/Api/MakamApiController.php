@@ -31,8 +31,8 @@ class MakamApiController extends Controller
             // Query spasial PostGIS efisien menggunakan ST_Distance pada geografi (geography)
             // ST_MakePoint menerima sumbu X (Longitude) dahulu, kemudian Y (Latitude).
             // geom::geography mengonversi geometri koordinat datar ke geografi bola ellipsoid bumi presisi meter.
-            $makam = Makam::with(['blokTpu.tpu', 'blokTpu.blok'])
-                ->select('id', 'blok_tpu_id', 'nama_nisan', 'tanggal_lahir', 'tanggal_wafat', 'gambar', 'keterangan')
+            $makam = Makam::with(['tpu'])
+                ->select('id', 'tpu_id', 'nama_nisan', 'tanggal_lahir', 'tanggal_wafat', 'gambar', 'keterangan')
                 ->selectRaw('ST_Y(geom) as lat, ST_X(geom) as lng')
                 ->selectRaw('
                     ST_Distance(
@@ -60,8 +60,7 @@ class MakamApiController extends Controller
                     'tanggal_wafat' => $item->tanggal_wafat?->format('Y-m-d'),
                     'gambar'        => $item->gambar ? asset('storage/' . $item->gambar) : null,
                     'keterangan'    => $item->keterangan,
-                    'tpu_nama'      => optional(optional($item->blokTpu)->tpu)->nama,
-                    'blok_nama'     => optional(optional($item->blokTpu)->blok)->nama,
+                    'tpu_nama'      => optional($item->tpu)->nama,
                     'lat'           => (float) $item->lat,
                     'lng'           => (float) $item->lng,
                     'jarak_meter'   => round($meters, 2),
